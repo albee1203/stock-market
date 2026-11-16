@@ -90,8 +90,9 @@ def parse_csv(text: str) -> list[FutRow]:
 def select_night(rows: list[FutRow], contract: str = "TX") -> NightQuote | None:
     """取最近一次夜盤（成交量最大的到期月份），與「夜盤開始前最後一個日盤」的同月份收盤比較。
 
-    不論期交所把夜盤標在開始日或隔日，「日期 ≤ 夜盤日期的最近一個日盤」都會是夜盤開始前的那一盤
-    （早上 9 點前執行時，當天日盤尚未產生）。
+    期交所把夜盤標在「下一個交易日」：11/13（五）15:00～11/14 05:00 的夜盤，交易日期標為 11/16（一）。
+    （2026-11-16 實測：下午查詢時，標為 11/16 的夜盤收盤 43,706，而 11/16 日盤收 40,885、11/13 日盤收約 43,000 多）
+    因此比較基準是「日期早於夜盤標示日」的最後一個日盤；當天日盤即使已經產生也不能拿來比。
     """
     rows = [r for r in rows if r.contract == contract and r.close and "/" not in r.month]  # 排除價差組合
     night = [r for r in rows if r.session == "盤後"]
@@ -99,7 +100,7 @@ def select_night(rows: list[FutRow], contract: str = "TX") -> NightQuote | None:
         return None
     nd = max(r.date for r in night)
     best = max((r for r in night if r.date == nd), key=lambda r: r.volume)
-    day = [r for r in rows if r.session == "一般" and r.month == best.month and r.date <= nd]
+    day = [r for r in rows if r.session == "一般" and r.month == best.month and r.date < nd]
     if not day:
         return None
     ref = max(day, key=lambda r: r.date)

@@ -24,6 +24,17 @@ from .risk import index_label, to_index
 log = logging.getLogger(__name__)
 
 
+def purge_invalid(session: Session) -> int:
+    """刪除舊版程式誤存的紀錄（夜盤標示日 ≤ 比較日盤日，代表拿了夜盤之後的日盤來比）。"""
+    bad = list(session.scalars(select(NightSession).where(NightSession.night_date <= NightSession.ref_date)))
+    for row in bad:
+        session.delete(row)
+    if bad:
+        session.commit()
+        log.warning("已刪除 %d 筆錯誤的夜盤紀錄", len(bad))
+    return len(bad)
+
+
 def save_night(session: Session, q: NightQuote) -> NightSession:
     row = session.scalar(select(NightSession).where(NightSession.ref_date == q.ref_date,
                                                     NightSession.contract == q.contract))
@@ -38,6 +49,7 @@ def save_night(session: Session, q: NightQuote) -> NightSession:
 
 def update_night(session: Session, today: date) -> dict | None:
     cfg = settings.night
+    purge_invalid(session)
     try:
         q = fetch_latest_night(today, cfg.contract)
     except Exception as exc:  # noqa: BLE001 - 夜盤失敗不影響推播
@@ -74,7 +86,8 @@ def night_info(session: Session, list_date: date, cfg: NightConfig | None = None
     """清單日 list_date 收盤後的那一場夜盤。"""
     cfg = cfg or settings.night
     row = session.scalar(select(NightSession).where(NightSession.ref_date == list_date,
-                                                    NightSession.contract == cfg.contract))
+                                                    NightSession.contract == cfg.contract,
+                                                    NightSession.night_date > NightSession.ref_date))
     if row is None:
         return None
     change = row.close / row.ref_close - 1

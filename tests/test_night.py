@@ -25,12 +25,25 @@ def test_parse_and_select_next_day_convention():
     assert q.change_pct == pytest.approx(22680 / 23096 - 1)
 
 
-def test_select_same_day_convention():
-    # 若夜盤標在開始當天，也要比較同一天的日盤
-    csv = HEADER + row("2026/11/12", "202612", 23000, 1, "一般") + row("2026/11/13", "202612", 23096, 1, "一般") \
-        + row("2026/11/13", "202612", 23200, 1, "盤後")
+def test_select_ignores_day_session_after_the_night():
+    # 2026-11-16 下午實測情境：標為 11/16 的夜盤（上週五晚上）已出，11/16 日盤也已收盤
+    csv = HEADER + row("2026/11/13", "202611", 43150, 1, "一般") + row("2026/11/16", "202611", 40885, 1, "一般") \
+        + row("2026/11/16", "202611", 43706, 1, "盤後")
     q = select_night(parse_csv(csv))
-    assert q.ref_date == date(2026, 11, 13) and q.ref_close == 23096
+    assert q.ref_date == date(2026, 11, 13) and q.ref_close == 43150 and q.night_date == date(2026, 11, 16)
+    assert q.change_pct == pytest.approx(43706 / 43150 - 1)
+
+
+def test_purge_and_ignore_invalid_rows(session):
+    from datetime import datetime
+
+    from app.db import NightSession
+    from app.night import night_info, purge_invalid
+    session.add(NightSession(ref_date=date(2026, 11, 16), night_date=date(2026, 11, 16), contract="TX", month="202611",
+                             close=43706, ref_close=40885, volume=1, fetched_at=datetime(2026, 11, 16, 17, 30)))
+    session.commit()
+    assert night_info(session, date(2026, 11, 16)) is None  # 錯誤紀錄不會被讀到
+    assert purge_invalid(session) == 1
 
 
 def test_parse_non_csv():
