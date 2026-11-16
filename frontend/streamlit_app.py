@@ -36,6 +36,8 @@ def load(kind: str, d: str, **kw):
             return services.get_stock_detail(s, kw["code"], 30)
         if kind == "backtest":
             return services.get_backtest(s)
+        if kind == "alerts":
+            return services.get_alerts(s, dd)
     finally:
         s.close()
 
@@ -73,15 +75,19 @@ def rec_table(rows: list[dict]) -> pd.DataFrame:
     if df.empty:
         return df
     df["關鍵字"] = df["keywords"].apply(lambda k: "、".join(k))
+    df["停損"] = df["levels"].apply(lambda lv: f"{lv['stop']:,.2f}（-{lv['stop_pct']:.0%}）" if lv else "")
+    df["停利"] = df["levels"].apply(lambda lv: f"{lv['take']:,.2f}（+{lv['take_pct']:.0%}）" if lv else "")
     return df.rename(columns={
-        "rank": "#", "code": "代號", "name": "名稱", "total_score": "綜合", "foreign_score": "外資分",
+        "rank": "#", "code": "代號", "name": "名稱", "index": "推薦指數", "label": "評等", "total_score": "綜合", "foreign_score": "外資分",
         "news_score": "新聞分", "streak": "連續天數", "net_lots": "買賣超(張)", "net_amount_e8": "金額(億)",
         "news_count": "新聞數", "reason": "推薦理由",
-    })[["#", "代號", "名稱", "綜合", "外資分", "新聞分", "連續天數", "買賣超(張)", "金額(億)", "新聞數", "關鍵字", "推薦理由"]]
+    })[["#", "代號", "名稱", "推薦指數", "評等", "外資分", "新聞分", "停損", "停利", "連續天數", "買賣超(張)", "金額(億)",
+        "新聞數", "關鍵字", "推薦理由"]]
 
 
 score_cfg = {c: st.column_config.ProgressColumn(c, min_value=-1, max_value=1, format="%.2f")
-             for c in ("綜合", "外資分", "新聞分")}
+             for c in ("外資分", "新聞分")}
+score_cfg["推薦指數"] = st.column_config.ProgressColumn("推薦指數", min_value=0, max_value=100, format="%d")
 score_cfg["推薦理由"] = st.column_config.TextColumn("推薦理由", width="large")
 
 
@@ -93,6 +99,13 @@ def show_rec(rows: list[dict]) -> None:
         st.dataframe(df, hide_index=True, column_config=score_cfg, width="stretch")
 
 with tab1:
+    al = load("alerts", sel)
+    if al["alerts"]:
+        with st.expander(f"🔔 停損停利提醒（{len(al['alerts'])}）", expanded=True):
+            for a in al["alerts"]:
+                price = a["exit_price"] or a["last_close"]
+                st.markdown(f"**{a['name']} {a['code']}　{a['text']}**　收盤 {price:,.2f}，"
+                            f"{a['open_date']} 入清單起 {a['ret'] * 100:+.1f}%（停損 {a['stop']:,.2f}／停利 {a['take']:,.2f}）")
     st.subheader("📈 建議買入（外資買 + 新聞利多）")
     show_rec(rec["buy"])
     st.subheader("📉 建議賣出／避開（外資賣 + 新聞利空）")
@@ -164,6 +177,16 @@ with tab5:
                     col.caption(f"{win} {m['win_rate']:.0%}｜中位數 {m['median'] * 100:+.2f}%｜{m['n']} 筆")
                 else:
                     col.metric(f"{h} 日後平均報酬", "—")
+        stg = bt["strategy"]
+        st.subheader("🛡️ 照停損停利出場（買入清單，最長持有 20 日）")
+        if stg["closed"]:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("平均實現報酬", f"{stg['avg'] * 100:+.2f}%")
+            c2.metric("勝率", f"{stg['win_rate']:.0%}")
+            c3.metric("平均持有", f"{stg['avg_days']} 日")
+            st.caption(f"已出場 {stg['closed']} 筆：停利 {stg['take']}／停損 {stg['stop']}／到期 {stg['expired']}｜持有中 {stg['open']} 筆")
+        else:
+            st.write(f"尚無已出場部位（持有中 {stg['open']} 筆）")
         df = pd.DataFrame(bt["details"])
         df = df[df["r1"].notna()]
         for h in bt["horizons"]:

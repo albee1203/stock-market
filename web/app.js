@@ -37,6 +37,76 @@ async function loadDay(fresh = false) {
   state.day = state.date ? await getJSON(`data/days/${state.date}.json`, { fresh }) : null;
 }
 
+/* ---------- 推薦指數 / 停損停利 ---------- */
+
+const IDX_LEVELS = [[80, "強力關注"], [65, "偏多"], [36, "中性"], [21, "偏空"], [0, "強烈避開"]];
+const idxLabel = i => IDX_LEVELS.find(([t]) => i >= t)[1];
+const idxTone = i => (i >= 65 ? "up" : i <= 35 ? "down" : "");
+function badge(idx) {
+  if (idx == null) return "";
+  return `<span class="badge ${idxTone(idx)}" title="推薦指數（0~100，50 為中性）"><b class="num">${idx}</b><small>${idxLabel(idx)}</small></span>`;
+}
+const fmtP = x => (x == null ? "—" : Number(x).toLocaleString("zh-TW", { maximumFractionDigits: 2 }));
+function levelsLine(lv, prefix = "參考") {
+  if (!lv) return "";
+  return `<p class="levels"><span class="down-t">${prefix}停損 <b class="num">${fmtP(lv.stop)}</b>（-${Math.round(lv.stop_pct * 100)}%）</span>
+    <span class="up-t">停利 <b class="num">${fmtP(lv.take)}</b>（+${Math.round(lv.take_pct * 100)}%）</span></p>`;
+}
+
+// 與 app/risk.py 相同的公式：停損 = clamp(2σ, 4%, 10%)，停利 = 停損 × 2
+function calcLevels(entry, sigma, stopPct, takePct) {
+  const r = state.index?.risk || { sl_sigma_mult: 2, sl_min: 0.04, sl_max: 0.1, default_sl: 0.07, reward_ratio: 2, near_pct: 0.02 };
+  const sl = stopPct ?? (sigma == null ? r.default_sl : Math.min(r.sl_max, Math.max(r.sl_min, r.sl_sigma_mult * sigma)));
+  const tp = takePct ?? sl * r.reward_ratio;
+  return { entry, stop: +(entry * (1 - sl)).toFixed(2), take: +(entry * (1 + tp)).toFixed(2), stop_pct: sl, take_pct: tp };
+}
+function holdingStatus(price, lv) {
+  const near = state.index?.risk?.near_pct ?? 0.02;
+  if (price <= lv.stop) return ["stop", "已跌破停損價"];
+  if (price >= lv.take) return ["take", "已達停利價"];
+  if (price <= lv.stop * (1 + near)) return ["near_stop", "接近停損價"];
+  if (price >= lv.take * (1 - near)) return ["near_take", "接近停利價"];
+  return ["ok", "正常"];
+}
+
+// 我的持股：只存在這台裝置（localStorage），不會上傳
+function loadHoldings() { try { return JSON.parse(localStorage.getItem("holdings") || "{}"); } catch { return {}; } }
+function saveHoldings(h) { try { localStorage.setItem("holdings", JSON.stringify(h)); } catch { /* 私密模式等 */ } }
+state.holdings = loadHoldings();
+
+async function getHistory(code) {
+  const data = await getJSON(`data/history/${encodeURIComponent(code)}.json`);
+  return Array.isArray(data) ? { h: data, levels: null } : data;
+}
+const lastClose = hist => [...hist.h].reverse().find(x => x[2] != null)?.[2];
+
+const ALERT_ICON = { stop: "🛑", near_stop: "⚠️", take: "🎯", near_take: "📈", expired: "⏱" };
+
+async function alertsBlock() {
+  const items = (state.day?.alerts || []).map(a => `
+    <a class="alert ${a.kind.includes("stop") ? "down" : a.kind.includes("take") ? "up" : ""}" href="#/stock/${esc(a.code)}">
+      <span>${ALERT_ICON[a.kind] || "•"} <b>${esc(a.name)}</b> <span class="code">${esc(a.code)}</span> ${esc(a.text)}</span>
+      <span class="muted num">收盤 ${fmtP(a.exit_price ?? a.last_close)}・${esc(a.open_date.slice(5))} 入清單起 <span class="${pctCls(a.ret)}">${pct(a.ret)}</span>・停損 ${fmtP(a.stop)}／停利 ${fmtP(a.take)}</span>
+    </a>`);
+  for (const [code, h] of Object.entries(state.holdings)) {
+    let hist;
+    try { hist = await getHistory(code); } catch { continue; }
+    const price = lastClose(hist);
+    if (price == null) continue;
+    const lv = calcLevels(h.cost, hist.levels?.sigma ?? null, h.stopPct, h.takePct);
+    const [kind, text] = holdingStatus(price, lv);
+    const name = state.stocks?.find(s => s[0] === code)?.[1] || code;
+    const ret = price / h.cost - 1;
+    items.push(`
+      <a class="alert ${kind.includes("stop") ? "down" : kind.includes("take") ? "up" : "ok"}" href="#/stock/${esc(code)}">
+        <span>${ALERT_ICON[kind] || "💼"} 持股 <b>${esc(name)}</b> <span class="code">${esc(code)}</span> ${esc(text)}</span>
+        <span class="muted num">收盤 ${fmtP(price)}・成本 ${fmtP(h.cost)} <span class="${pctCls(ret)}">${pct(ret)}</span>・停損 ${fmtP(lv.stop)}／停利 ${fmtP(lv.take)}</span>
+      </a>`);
+  }
+  if (!items.length) return "";
+  return `<h2 style="margin-top:4px">🔔 停損停利提醒</h2><div class="rows" style="margin-bottom:14px">${items.join("")}</div>`;
+}
+
 /* ---------- 共用元件 ---------- */
 
 function meter(label, v) {
@@ -56,7 +126,8 @@ const disclaimer = () => `<p class="disclaimer">${esc(state.index?.disclaimer ||
 
 /* ---------- 頁面 ---------- */
 
-function renderList() {
+async function renderList() {
+  if (!state.stocks) state.stocks = await getJSON("data/stocks.json").catch(() => []);
   const d = state.day;
   if (!d) return empty("還沒有資料。請等待每日自動更新，或在電腦上執行 <code>python -m app.cli run</code>。");
   const side = state.listSide;
@@ -66,13 +137,15 @@ function renderList() {
       <div class="card-head">
         <span class="rank num">${r.rank}</span>
         <span class="name">${esc(r.name)}</span><span class="code">${esc(r.code)}</span>
-        <span class="pill ${side === "buy" ? "up" : "down"} num">${sign(r.total_score)}</span>
+        ${badge(r.index)}
       </div>
       <div class="meters">${meter("外資", r.foreign_score)}${meter("新聞", r.news_score)}</div>
       <p class="reason">${esc(r.reason)}</p>
+      ${side === "buy" ? levelsLine(r.levels) : `<p class="levels muted">持有者可考慮減碼${r.levels ? `；跌破 <b class="num">${fmtP(r.levels.stop)}</b>（-${Math.round(r.levels.stop_pct * 100)}%）宜停損` : ""}</p>`}
       <div class="chips">${(r.keywords || []).map(k => `<span class="chip ${side === "buy" ? "up" : "down"}">${esc(k)}</span>`).join("")}</div>
     </a>`).join("");
-  return seg("listSide", side, [["buy", `建議買入 ${d.buy.length}`, "up"], ["sell", `賣出／避開 ${d.sell.length}`, "down"]])
+  return (await alertsBlock())
+    + seg("listSide", side, [["buy", `建議買入 ${d.buy.length}`, "up"], ["sell", `賣出／避開 ${d.sell.length}`, "down"]])
     + `<p class="muted" style="margin-bottom:10px">${side === "buy" ? "外資連買或大買，且新聞偏利多" : "外資連賣或大賣，且新聞偏利空"}</p>`
     + (rows.length ? cards : empty("今日沒有同時符合外資與新聞條件的標的"))
     + disclaimer();
@@ -88,7 +161,7 @@ function renderForeign() {
     + `<div class="rows">${rows.map((r, i) => `
       <a class="row" href="#/stock/${esc(r.code)}">
         <span><span class="muted num" style="display:inline">${i + 1}.</span> <b>${esc(r.name)}</b> <span class="code">${esc(r.code)}</span></span>
-        <span class="r big num ${cls}">${fmtInt(r.net_lots)} 張</span>
+        <span class="r big num ${cls}">${fmtInt(r.net_lots)} 張${r.index != null ? ` <span class="mini ${idxTone(r.index)}">${r.index}</span>` : ""}</span>
         <span class="chips" style="margin:0">${r.flags.map(f => `<span class="chip">${esc(f)}</span>`).join("") || `<span class="muted">連續 ${Math.abs(r.streak)} 日</span>`}</span>
         <span class="r muted num">${fmtYi(r.net_amount)}${r.net_ratio != null ? `・佔量 ${(Math.abs(r.net_ratio) * 100).toFixed(0)}%` : ""}</span>
       </a>`).join("")}</div>` + disclaimer();
@@ -154,8 +227,9 @@ async function renderStock(code) {
       `<a class="chip ${state.day.buy.includes(r) ? "up" : "down"}" href="#/stock/${esc(r.code)}">${esc(r.code)} ${esc(r.name)}</a>`).join("")}</div>` : "");
   }
   const info = state.stocks.find(s => s[0] === code);
-  let hist = [];
-  try { hist = await getJSON(`data/history/${encodeURIComponent(code)}.json`); } catch { /* 無資料 */ }
+  let histObj = { h: [], levels: null };
+  try { histObj = await getHistory(code); } catch { /* 無資料 */ }
+  const hist = histObj.h;
   if (!info && !hist.length) return search + empty(`找不到 ${esc(code)} 的資料`);
   const rec = state.day && ([...state.day.buy.map(r => ["buy", r]), ...state.day.sell.map(r => ["sell", r])].find(([, r]) => r.code === code));
   const news = state.day ? state.day.news.filter(a => a.stocks.some(s => s.code === code)) : [];
@@ -166,15 +240,38 @@ async function renderStock(code) {
     if (Math.sign(v) === Math.sign(streak) && v !== 0) streak += Math.sign(v); else break;
   }
   const sum5 = hist.slice(-5).reduce((a, h) => a + h[1], 0);
-  const lastClose = [...hist].reverse().find(h => h[2] != null)?.[2];
+  const lastPx = lastClose(histObj);
+  const idx = state.day?.scores?.[code];
+  const mine = state.holdings[code];
+  let mineHtml = "";
+  if (mine && lastPx != null) {
+    const lv = calcLevels(mine.cost, histObj.levels?.sigma ?? null, mine.stopPct, mine.takePct);
+    const [kind, text] = holdingStatus(lastPx, lv);
+    const ret = lastPx / mine.cost - 1;
+    mineHtml = `<p class="${kind.includes("stop") ? "down-t" : kind.includes("take") ? "up-t" : ""}"><b>${ALERT_ICON[kind] || "💼"} ${esc(text)}</b>：成本 ${fmtP(mine.cost)}，目前 <span class="${pctCls(ret)}">${pct(ret)}</span></p>${levelsLine(lv, "我的")}`;
+  }
+  const holdForm = `<div class="card">
+      <h3 style="margin:0 0 6px;font-size:15px">💼 我的持股</h3>
+      ${mineHtml}
+      <form id="holding-form" data-code="${esc(code)}" class="hold-form">
+        <label>成本 <input name="cost" type="number" step="0.01" min="0" inputmode="decimal" value="${mine ? esc(mine.cost) : ""}" placeholder="${lastPx ?? ""}"></label>
+        <label>停損% <input name="sl" type="number" step="0.5" min="0" inputmode="decimal" value="${mine?.stopPct != null ? esc(mine.stopPct * 100) : ""}" placeholder="自動"></label>
+        <label>停利% <input name="tp" type="number" step="0.5" min="0" inputmode="decimal" value="${mine?.takePct != null ? esc(mine.takePct * 100) : ""}" placeholder="自動"></label>
+        <button class="btn">${mine ? "更新" : "加入"}</button>${mine ? `<button type="button" class="btn ghost" data-remove="${esc(code)}">移除</button>` : ""}
+      </form>
+      <p class="muted">只存在這台裝置。停損%、停利% 留空＝依波動自動計算。</p>
+    </div>`;
   return search + `
     <h2 style="font-size:20px">${esc(info?.[1] || code)} <span class="code">${esc(code)}・${info?.[2] === "TPEX" ? "上櫃" : "上市"}</span></h2>
-    ${rec ? `<div class="card" style="border-color:var(--${rec[0] === "buy" ? "up" : "down"})"><b class="${rec[0] === "buy" ? "up" : "down"}-t">今日列入${rec[0] === "buy" ? "建議買入" : "建議賣出／避開"} 第 ${rec[1].rank} 名（${sign(rec[1].total_score)}）</b><p class="reason">${esc(rec[1].reason)}</p></div>` : ""}
+    ${rec ? `<div class="card" style="border-color:var(--${rec[0] === "buy" ? "up" : "down"})"><b class="${rec[0] === "buy" ? "up" : "down"}-t">今日列入${rec[0] === "buy" ? "建議買入" : "建議賣出／避開"} 第 ${rec[1].rank} 名・推薦指數 ${rec[1].index}</b><p class="reason">${esc(rec[1].reason)}</p></div>` : ""}
+    ${idx != null ? `<div class="card idx-card">${badge(idx)}<span class="muted">推薦指數（0～100，50 為中性）綜合當日外資籌碼與新聞情緒</span></div>` : ""}
     <div class="stats">
-      <div class="stat"><span class="muted">收盤</span><b class="num">${lastClose ?? "—"}</b></div>
+      <div class="stat"><span class="muted">收盤</span><b class="num">${fmtP(lastPx)}</b></div>
       <div class="stat"><span class="muted">外資連續</span><b class="num ${streak > 0 ? "up-t" : streak < 0 ? "down-t" : ""}">${streak > 0 ? "買" : streak < 0 ? "賣" : ""} ${Math.abs(streak)} 日</b></div>
       <div class="stat"><span class="muted">近 5 日合計</span><b class="num ${sum5 > 0 ? "up-t" : sum5 < 0 ? "down-t" : ""}">${fmtInt(sum5)} 張</b></div>
     </div>
+    ${histObj.levels ? `<div class="card"><h3 style="margin:0 0 4px;font-size:15px">若今日收盤買進</h3>${levelsLine(histObj.levels)}<p class="muted">依近 20 日波動計算，風險報酬比 1:2；以收盤價判斷是否觸及。</p></div>` : ""}
+    ${holdForm}
     ${hist.length ? `<div class="chart">${chartSVG(hist)}<div class="legend"><span><span class="dot up"></span>外資買超</span><span><span class="dot down"></span>外資賣超</span><span>— 收盤價</span></div></div>` : ""}
     <h2>當日相關新聞</h2>
     ${news.length ? `<div class="rows">${news.map(newsItem).join("")}</div>` : empty("當日沒有相關新聞")}
@@ -208,6 +305,10 @@ async function renderBacktest() {
   return seg("btSide", side, [["buy", "建議買入", "up"], ["sell", "賣出／避開", "down"]])
     + `<p class="muted">統計 ${bt.list_days} 份清單（${esc(bt.period[0])} ～ ${esc(bt.period[1])}）。${side === "sell" ? "賣出清單報酬越低代表避開越正確。" : ""}</p>`
     + `<div class="stats">${tiles}</div>`
+    + (side === "buy" && bt.strategy ? `<div class="card"><h3 style="margin:0 0 6px;font-size:15px">照停損停利出場（最長持有 20 日）</h3>
+        ${bt.strategy.closed ? `<p style="margin:0"><b class="num ${pctCls(bt.strategy.avg)}">平均 ${pct(bt.strategy.avg)}</b>・勝率 ${Math.round(bt.strategy.win_rate * 100)}%・平均持有 ${bt.strategy.avg_days} 日</p>
+        <p class="muted">已出場 ${bt.strategy.closed} 筆：停利 ${bt.strategy.take}・停損 ${bt.strategy.stop}・到期 ${bt.strategy.expired}｜持有中 ${bt.strategy.open} 筆</p>`
+        : `<p class="muted">尚無已出場部位（持有中 ${bt.strategy.open} 筆）</p>`}</div>` : "")
     + `<h2>明細 <span class="muted" style="display:inline;float:right">${bt.horizons.map(h => `<span style="display:inline-block;min-width:4.2em;text-align:right">${h}日</span>`).join("")}</span></h2>`
     + (pending ? `<p class="muted" style="margin-bottom:8px">另有 ${pending} 筆最新清單尚未滿 1 個交易日，明天起開始計算。</p>` : "")
     + `<div class="rows">${rows || '<div class="empty">尚無已實現的報酬</div>'}</div>`
@@ -224,7 +325,7 @@ async function render() {
     else if (tab === "news") view.innerHTML = renderNews();
     else if (tab === "backtest") view.innerHTML = await renderBacktest();
     else if (tab === "stock") view.innerHTML = await renderStock(arg ? decodeURIComponent(arg) : "");
-    else view.innerHTML = renderList();
+    else view.innerHTML = await renderList();
   } catch (e) {
     view.innerHTML = empty(`載入失敗：${esc(e.message)}`);
   }
@@ -245,6 +346,24 @@ view.addEventListener("submit", e => {
 });
 view.addEventListener("change", e => {
   if (e.target.matches("#stock-search input") && /^\d{4}\s/.test(e.target.value)) location.hash = `#/stock/${e.target.value.slice(0, 4)}`;
+});
+view.addEventListener("submit", e => {
+  if (e.target.id !== "holding-form") return;
+  e.preventDefault();
+  const f = new FormData(e.target), code = e.target.dataset.code;
+  const cost = parseFloat(f.get("cost"));
+  if (!(cost > 0)) return;
+  const sl = parseFloat(f.get("sl")), tp = parseFloat(f.get("tp"));
+  state.holdings[code] = { cost, ...(sl > 0 ? { stopPct: sl / 100 } : {}), ...(tp > 0 ? { takePct: tp / 100 } : {}) };
+  saveHoldings(state.holdings);
+  render();
+});
+view.addEventListener("click", e => {
+  const b = e.target.closest("button[data-remove]");
+  if (!b) return;
+  delete state.holdings[b.dataset.remove];
+  saveHoldings(state.holdings);
+  render();
 });
 window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
 

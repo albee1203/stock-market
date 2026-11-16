@@ -6,6 +6,7 @@
 - 未還原除權息：除息日附近的報酬會被低估。
 - 基準 = 同期間所有有收盤價個股的等權平均報酬；超額報酬 = 個股報酬 − 基準。
 - 買入清單的「勝率」= 報酬 > 0 的比例；賣出清單的「勝率」= 報酬 < 0 的比例（避開成功）。
+- strategy：買入清單照停損／停利／20 日到期出場的實現報酬（見 app/risk.py）。
 """
 from __future__ import annotations
 
@@ -93,7 +94,10 @@ def compute_backtest(session: Session, horizons: tuple[int, ...] = HORIZONS, sin
         side: {str(h): _summary(*buckets[(side, h)], side) for h in horizons} for side in ("buy", "sell")
     }
     rec_dates = sorted({r.date for r in recs})
+    from .risk import strategy_summary, track_positions
+    strategy = strategy_summary(track_positions(session, calendar[-1])) if calendar else strategy_summary([])
     return {
+        "strategy": strategy,
         "horizons": list(horizons),
         "period": [rec_dates[0].isoformat(), rec_dates[-1].isoformat()] if rec_dates else None,
         "list_days": len(rec_dates),

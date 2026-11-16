@@ -4,7 +4,7 @@
   data/index.json            {updated_at, latest, dates[], disclaimer}
   data/days/<date>.json      當日觀察清單、外資排行、新聞
   data/stocks.json           [[code, name, market], ...]（搜尋用）
-  data/history/<code>.json   個股近 60 日外資買賣超與收盤價
+  data/history/<code>.json   {h: 近 60 日 [日期, 外資買賣超張數, 收盤], levels: 停損停利參考價}
   data/backtest.json         回測統計與最近 300 筆明細
 並把 web/ 的 App 外殼複製進來，整個目錄就是可部署的網站。
 """
@@ -19,8 +19,11 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from dataclasses import asdict
+
 from . import services
-from .config import ROOT, TZ
+from .risk import levels_for
+from .config import ROOT, TZ, settings
 from .db import DailyPrice, ForeignFlow, Stock
 
 WEB_DIR = ROOT / "web"
@@ -47,7 +50,12 @@ def export_day(session: Session, d) -> dict:
     for a in news:
         a["summary"] = a["summary"][:200]
         a.pop("id", None)
-    return {"date": d.isoformat(), "buy": rec["buy"], "sell": rec["sell"], "foreign": foreign, "news": news}
+    scores = services.get_scores(session, d)
+    for side in ("buy", "sell"):
+        for r in foreign[side]:
+            r["index"] = scores.get(r["code"])
+    return {"date": d.isoformat(), "buy": rec["buy"], "sell": rec["sell"], "foreign": foreign, "news": news,
+            "scores": scores, **services.get_alerts(session, d)}
 
 
 def export_history(session: Session, out: Path, days: int = 60) -> int:
@@ -61,10 +69,13 @@ def export_history(session: Session, out: Path, days: int = 60) -> int:
     for f in session.scalars(select(ForeignFlow).where(ForeignFlow.date >= lo).order_by(ForeignFlow.date)):
         flows[f.code].append(f)
     closes = {(p.code, p.date): p.close for p in session.scalars(select(DailyPrice).where(DailyPrice.date >= lo))}
+    levels = levels_for(session, None, dates[0])
     for code, rows in flows.items():
-        _dump(out / f"{code}.json", [
-            [f.date.isoformat(), round(f.net_shares / 1000), closes.get((code, f.date))] for f in rows
-        ])
+        lv = levels.get(code)
+        _dump(out / f"{code}.json", {
+            "h": [[f.date.isoformat(), round(f.net_shares / 1000), closes.get((code, f.date))] for f in rows],
+            "levels": asdict(lv) if lv else None,
+        })
     return len(flows)
 
 
@@ -86,6 +97,7 @@ def export_site(session: Session, out: Path, days: int = 20) -> dict:
         "latest": dates[0].isoformat() if dates else None,
         "dates": [d.isoformat() for d in dates],
         "disclaimer": services.DISCLAIMER,
+        "risk": asdict(settings.risk),
     }
     _dump(data / "index.json", index)
     return {"out": str(out), "days": len(dates), "stocks_with_history": n_hist}

@@ -7,7 +7,11 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .analysis.scoring import compute_foreign_metrics, foreign_metrics_as_dicts
+from dataclasses import asdict
+
+from .analysis.scoring import compute_foreign_metrics, compute_news_metrics, foreign_metrics_as_dicts
+from .config import settings
+from .risk import alerts_for, index_label, levels_for, to_index, track_positions
 from .collectors.news import news_window
 from .db import DailyPrice, ForeignFlow, NewsArticle, Recommendation, Stock
 
@@ -25,8 +29,14 @@ def get_recommendations(session: Session, d: date) -> dict:
         select(Recommendation).where(Recommendation.date == d).order_by(Recommendation.side, Recommendation.rank)
     )
     out: dict = {"date": d.isoformat(), "buy": [], "sell": [], "disclaimer": DISCLAIMER}
+    rows = list(rows)
+    levels = levels_for(session, {r.code for r in rows}, d) if rows else {}
     for r in rows:
+        idx = to_index(r.total_score)
+        lv = levels.get(r.code)
         out[r.side].append({
+            "index": idx, "label": index_label(idx),
+            "levels": asdict(lv) if lv else None,
             "rank": r.rank, "code": r.code, "name": names.get(r.code, r.code),
             "total_score": r.total_score, "foreign_score": r.foreign_score, "news_score": r.news_score,
             "streak": r.streak, "net_lots": round(r.net_shares / 1000),
@@ -93,3 +103,21 @@ def get_backtest(session: Session, limit_details: int = 300) -> dict:
     bt = compute_backtest(session)
     bt["details"] = bt["details"][:limit_details]
     return bt
+
+
+def get_scores(session: Session, d: date) -> dict[str, int]:
+    """所有有外資資料的個股之推薦指數（無新聞者新聞分以 0 計）。"""
+    cfg = settings.scoring
+    news = compute_news_metrics(session, d)
+    return {
+        code: to_index(cfg.weight_foreign * fm.score + cfg.weight_news * (news[code].score if code in news else 0.0))
+        for code, fm in compute_foreign_metrics(session, d, cfg).items()
+    }
+
+
+def get_alerts(session: Session, d: date) -> dict:
+    """清單追蹤的停損停利提醒（d 日新觸發 + 接近中）與目前持有中的虛擬部位。"""
+    positions = track_positions(session, d)
+    open_pos = [asdict(p) for p in positions if p.status == "open"]
+    open_pos.sort(key=lambda p: p["ret"] or 0, reverse=True)
+    return {"alerts": alerts_for(positions, d), "open": open_pos}

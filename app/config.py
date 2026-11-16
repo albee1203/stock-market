@@ -48,6 +48,19 @@ class ScoringConfig:
 
 
 @dataclass(frozen=True)
+class RiskConfig:
+    """停損停利參數。停損幅度 = clamp(sl_sigma_mult × 近 vol_window 日報酬標準差, sl_min, sl_max)。"""
+    vol_window: int = 20
+    sl_sigma_mult: float = 2.0
+    sl_min: float = 0.04
+    sl_max: float = 0.10
+    default_sl: float = 0.07       # 歷史資料不足時使用
+    reward_ratio: float = 2.0      # 停利幅度 = 停損幅度 × reward_ratio
+    hold_days: int = 20            # 清單追蹤最長天數
+    near_pct: float = 0.02         # 距停損／停利價 2% 內視為「接近」
+
+
+@dataclass(frozen=True)
 class Settings:
     database_url: str = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'twstock.db'}")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
@@ -65,6 +78,7 @@ class Settings:
         }
     )
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
+    risk: RiskConfig = field(default_factory=RiskConfig)
 
 
 settings = Settings()

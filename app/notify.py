@@ -5,6 +5,7 @@
   TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID   Telegram Bot
   NTFY_TOPIC [+ NTFY_SERVER]              ntfy（https://ntfy.sh），手機裝 ntfy App 訂閱同名主題
   APP_URL                                 訊息中附上的 App 網址
+  HOLDINGS                                我的持股（選用），每行「代號,成本[,停損%,停利%]」，用於持股停損停利提醒
 
 註：LINE Notify 已於 2025-03-31 停止服務，故使用 LINE Messaging API。
 """
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session
 from . import services
 from .backtest import compute_backtest, fmt_pct
 from .config import TZ
+from .risk import check_holdings, fmt_price, load_holdings
 from .db import NotificationLog
 
 log = logging.getLogger(__name__)
@@ -32,9 +34,33 @@ WEEKDAYS = "一二三四五六日"
 
 # ---------- 訊息內容 ----------
 
-def _line(r: dict) -> str:
+def _line(r: dict, side: str) -> str:
     flow = r["reason"].split("｜")[0].split("，")[:2]  # 只取外資的前兩段，保持簡短
-    return f"{r['rank']}. {r['name']} {r['code']}（{r['total_score']:+.2f}）\n   {'，'.join(flow)}"
+    out = f"{r['rank']}. {r['name']} {r['code']}｜推薦指數 {r['index']}（{r['label']}）\n   {'，'.join(flow)}"
+    lv = r.get("levels")
+    if side == "buy" and lv:
+        out += (f"\n   參考停損 {fmt_price(lv['stop'])}（-{lv['stop_pct']:.0%}）"
+                f"／停利 {fmt_price(lv['take'])}（+{lv['take_pct']:.0%}）")
+    return out
+
+
+ALERT_ICON = {"stop": "🛑", "near_stop": "⚠️", "take": "🎯", "near_take": "📈", "expired": "⏱"}
+
+
+def _alert_lines(session: Session, d: date) -> list[str]:
+    lines = []
+    for a in services.get_alerts(session, d)["alerts"]:
+        price = a["exit_price"] or a["last_close"]
+        lines.append(f"{ALERT_ICON.get(a['kind'], '•')} {a['name']} {a['code']} {a['text']}："
+                     f"收盤 {fmt_price(price)}，{a['open_date'][5:]} 入清單起 {fmt_pct(a['ret'])}"
+                     f"（停損 {fmt_price(a['stop'])}／停利 {fmt_price(a['take'])}）")
+    for h in check_holdings(session, d, load_holdings()):
+        if h["kind"] == "ok":
+            continue
+        lines.append(f"{ALERT_ICON.get(h['kind'], '•')} 持股 {h['name']} {h['code']} {h['text']}："
+                     f"收盤 {fmt_price(h['close'])}，成本 {fmt_price(h['cost'])}（{fmt_pct(h['ret'])}），"
+                     f"停損 {fmt_price(h['stop'])}／停利 {fmt_price(h['take'])}")
+    return lines
 
 
 def build_message(session: Session, d: date, app_url: str = "") -> tuple[str, str]:
@@ -42,14 +68,19 @@ def build_message(session: Session, d: date, app_url: str = "") -> tuple[str, st
     rec = services.get_recommendations(session, d)
     title = f"台股觀察清單｜{d:%m/%d}（{WEEKDAYS[d.weekday()]}）收盤資料"
     parts = [f"📊 {title}"]
+    alerts = _alert_lines(session, d)
+    if alerts:
+        parts.append("\n🔔 停損停利提醒")
+        parts += alerts
     for side, head in (("buy", "📈 建議買入（外資買＋新聞利多）"), ("sell", "📉 建議賣出／避開（外資賣＋新聞利空）")):
         rows = rec[side][:TOP_N]
         parts.append(f"\n{head}")
-        parts += [_line(r) for r in rows] or ["（無符合條件標的）"]
+        parts += [_line(r, side) for r in rows] or ["（無符合條件標的）"]
         if len(rec[side]) > TOP_N:
             parts.append(f"…另有 {len(rec[side]) - TOP_N} 檔，詳見 App")
 
-    bt = compute_backtest(session)["summary"]
+    bt_all = compute_backtest(session)
+    bt = bt_all["summary"]
     b5, s5 = bt["buy"]["5"], bt["sell"]["5"]
     if b5["n"] or s5["n"]:
         line = "\n🔁 回測（過去清單 5 日後）"
@@ -57,6 +88,10 @@ def build_message(session: Session, d: date, app_url: str = "") -> tuple[str, st
             line += f"\n買入：平均 {fmt_pct(b5['avg'])}，勝率 {b5['win_rate']:.0%}（{b5['n']} 筆）"
         if s5["n"]:
             line += f"\n賣出：平均 {fmt_pct(s5['avg'])}，避開成功率 {s5['win_rate']:.0%}（{s5['n']} 筆）"
+        st = bt_all["strategy"]
+        if st["closed"]:
+            line += (f"\n照停損停利出場：平均 {fmt_pct(st['avg'])}，勝率 {st['win_rate']:.0%}"
+                     f"（停利 {st['take']}／停損 {st['stop']}／到期 {st['expired']}）")
         parts.append(line)
     if app_url:
         parts.append(f"\n👉 {app_url}")

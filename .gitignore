@@ -5,3 +5,4 @@ data/*.db
 .env
 .pytest_cache/
 site/
+holdings.csv

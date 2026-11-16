@@ -35,9 +35,12 @@ def _print_lists(rec: dict) -> None:
         if not rec[side]:
             print("  （無符合條件標的）")
         for r in rec[side]:
-            print(f"  {r['rank']:>2}. {r['code']} {r['name']:<6} 綜合 {r['total_score']:+.2f}"
-                  f"（外資 {r['foreign_score']:+.2f} / 新聞 {r['news_score']:+.2f}）")
+            print(f"  {r['rank']:>2}. {r['code']} {r['name']:<6} 推薦指數 {r['index']:>3}（{r['label']}）"
+                  f"  外資 {r['foreign_score']:+.2f} / 新聞 {r['news_score']:+.2f}")
             print(f"      {r['reason']}")
+            lv = r.get("levels")
+            if side == "buy" and lv:
+                print(f"      參考停損 {lv['stop']:,.2f}（-{lv['stop_pct']:.0%}）／停利 {lv['take']:,.2f}（+{lv['take_pct']:.0%}）")
     print(f"\n※ {rec['disclaimer']}")
 
 
@@ -131,6 +134,13 @@ def main(argv: list[str] | None = None) -> None:
                               f"超額 {fmt_pct(m['avg_excess'])}｜{m['n']} 筆")
                     else:
                         print(f"  {h:>2} 日後：尚無足夠資料")
+            st = bt["strategy"]
+            print(f"\n照停損停利出場（買入清單，最長持有 20 日）")
+            if st["closed"]:
+                print(f"  已出場 {st['closed']} 筆（停利 {st['take']}／停損 {st['stop']}／到期 {st['expired']}），"
+                      f"平均 {fmt_pct(st['avg'])}｜勝率 {st['win_rate']:.0%}｜平均持有 {st['avg_days']} 日｜持有中 {st['open']} 筆")
+            else:
+                print(f"  尚無已出場部位（持有中 {st['open']} 筆）")
         elif args.cmd == "replay":
             from .replay import replay
             res = replay(s, args.date or today, args.days, use_llm=args.llm)

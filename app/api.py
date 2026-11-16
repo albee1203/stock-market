@@ -66,6 +66,12 @@ def stock(code: str, days: int = Query(30, le=250), s: Session = Depends(db)) ->
     return detail
 
 
+@app.get("/api/alerts")
+def alerts(d: date | None = Query(None, alias="date"), s: Session = Depends(db)) -> dict:
+    """停損停利提醒：清單追蹤的新觸發／接近，以及持有中的虛擬部位。"""
+    return services.get_alerts(s, _resolve_date(s, d))
+
+
 @app.get("/api/backtest")
 def backtest(s: Session = Depends(db)) -> dict:
     """清單出現後 1 / 5 / 20 個交易日的報酬統計與明細。"""
