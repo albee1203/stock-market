@@ -25,3 +25,10 @@ def test_export_site(session, tmp_path):
     assert "alerts" in day and "open" in day and "risk" in index
     bt = json.loads((root / "data/backtest.json").read_text(encoding="utf-8"))
     assert bt["list_days"] == 25 and bt["details"]
+
+
+def test_export_stamps_version(session, tmp_path):
+    seed_demo(session, date(2026, 11, 13))
+    export_site(session, tmp_path / "site")
+    html = (tmp_path / "site/index.html").read_text(encoding="utf-8")
+    assert 'src="app.js?v=' in html and 'href="style.css?v=' in html and 'name="app-version"' in html

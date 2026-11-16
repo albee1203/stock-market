@@ -571,7 +571,8 @@ async function render() {
     else if (tab === "backtest") view.innerHTML = await renderBacktest();
     else if (tab === "portfolio") view.innerHTML = await renderPortfolio();
     else if (tab === "stock") view.innerHTML = await renderStock(arg ? decodeURIComponent(arg) : "");
-    else view.innerHTML = await renderList();
+    else if (tab === "list" || !tab) view.innerHTML = await renderList();
+    else view.innerHTML = empty(`找不到這個頁面，請按右上角 ↻ 更新 App`);
   } catch (e) {
     view.innerHTML = empty(`載入失敗：${esc(e.message)}`);
   }

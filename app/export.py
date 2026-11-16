@@ -80,12 +80,31 @@ def export_history(session: Session, out: Path, days: int = 60) -> int:
     return len(flows)
 
 
+def _stamp_version(out: Path) -> str:
+    """在 index.html 引用的 app.js / style.css 後面加上內容雜湊，確保頁面框架與程式永遠是同一版。"""
+    import hashlib
+    h = hashlib.sha256()
+    for name in ("app.js", "style.css", "index.html"):
+        f = out / name
+        if f.exists():
+            h.update(f.read_bytes())
+    ver = h.hexdigest()[:10]
+    index = out / "index.html"
+    if index.exists():
+        text = index.read_text(encoding="utf-8")
+        text = text.replace('src="app.js"', f'src="app.js?v={ver}"').replace('href="style.css"', f'href="style.css?v={ver}"')
+        text = text.replace("</head>", f'  <meta name="app-version" content="{ver}">\n</head>')
+        index.write_text(text, encoding="utf-8")
+    return ver
+
+
 def export_site(session: Session, out: Path, days: int = 20) -> dict:
     out = Path(out)
     if out.exists():
         shutil.rmtree(out)
     if WEB_DIR.exists():
         shutil.copytree(WEB_DIR, out)
+        _stamp_version(out)
     data = out / "data"
     dates = [datetime.fromisoformat(x).date() for x in services.list_dates(session, days)]
     for d in dates:
