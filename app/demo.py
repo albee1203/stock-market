@@ -92,4 +92,10 @@ def seed_demo(session: Session, end: date) -> date:
         analyze_articles(session, saved, use_llm=False, reanalyze=True)
         if i >= 5:
             build_recommendations(session, d)
-    return days[-1]
+    # 示範夜盤：最後一天收盤後台指期夜盤下跌約 1.8%
+    from .collectors.night import NightQuote
+    from .night import save_night
+    last = days[-1]
+    save_night(session, NightQuote(contract="TX", month="202612", night_date=last + timedelta(days=1), ref_date=last,
+                                   close=22_680.0, ref_close=23_096.0, volume=85_000))
+    return last

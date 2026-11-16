@@ -137,3 +137,18 @@ class NotificationLog(Base):
     channel: Mapped[str] = mapped_column(String(20))
     digest: Mapped[str] = mapped_column(String(64))
     sent_at: Mapped[dt.datetime] = mapped_column(DateTime)
+
+
+class NightSession(Base):
+    """台指期夜盤（盤後交易時段）相對前一日盤收盤的漲跌。ref_date＝被比較的日盤日期＝套用的清單日期。"""
+    __tablename__ = "night_sessions"
+    __table_args__ = (UniqueConstraint("ref_date", "contract"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ref_date: Mapped[dt.date] = mapped_column(Date, index=True)
+    night_date: Mapped[dt.date] = mapped_column(Date)
+    contract: Mapped[str] = mapped_column(String(10))
+    month: Mapped[str] = mapped_column(String(20))
+    close: Mapped[float] = mapped_column(Float)
+    ref_close: Mapped[float] = mapped_column(Float)
+    volume: Mapped[int] = mapped_column(Integer)
+    fetched_at: Mapped[dt.datetime] = mapped_column(DateTime)

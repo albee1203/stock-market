@@ -103,8 +103,40 @@ async function alertsBlock() {
         <span class="muted num">收盤 ${fmtP(price)}・成本 ${fmtP(h.cost)} <span class="${pctCls(ret)}">${pct(ret)}</span>・停損 ${fmtP(lv.stop)}／停利 ${fmtP(lv.take)}</span>
       </a>`);
   }
+  // 夜盤跳空預警：清單追蹤（後端算好）＋本機持股（依夜盤漲跌估算開盤價）
+  const night = state.day?.night;
+  const gaps = [...(state.day?.gap_alerts || [])];
+  if (night) {
+    const beta = state.index?.night?.beta ?? 1;
+    for (const [code, h] of Object.entries(state.holdings)) {
+      let hist; try { hist = await getHistory(code); } catch { continue; }
+      const price = lastClose(hist); if (price == null) continue;
+      const lv = calcLevels(h.cost, hist.levels?.sigma ?? null, h.stopPct, h.takePct);
+      const est = +(price * (1 + night.change_pct * beta)).toFixed(2);
+      const name = state.stocks?.find(x => x[0] === code)?.[1] || code;
+      if (est <= lv.stop && lv.stop < price) gaps.push({ code, name: "持股 " + name, last_close: price, est_open: est, stop: lv.stop, take: lv.take, kind: "gap_stop", text: "預估開盤可能跌破停損" });
+      else if (price < lv.take && lv.take <= est) gaps.push({ code, name: "持股 " + name, last_close: price, est_open: est, stop: lv.stop, take: lv.take, kind: "gap_take", text: "預估開盤可能觸及停利" });
+    }
+  }
+  items.unshift(...gaps.map(g => `
+    <a class="alert ${g.kind === "gap_stop" ? "down" : "up"}" href="#/stock/${esc(g.code)}">
+      <span>🌙 <b>${esc(g.name)}</b> <span class="code">${esc(g.code)}</span> ${esc(g.text)}</span>
+      <span class="muted num">昨收 ${fmtP(g.last_close ?? g.close)} → 預估 ${fmtP(g.est_open)}・停損 ${fmtP(g.stop)}／停利 ${fmtP(g.take)}</span>
+    </a>`));
   if (!items.length) return "";
   return `<h2 style="margin-top:4px">🔔 停損停利提醒</h2><div class="rows" style="margin-bottom:14px">${items.join("")}</div>`;
+}
+
+function nightBlock(n) {
+  if (!n) return "";
+  const t = n.change_pct > 0 ? "up" : n.change_pct < 0 ? "down" : "";
+  const arrow = n.change > 0 ? "▲" : n.change < 0 ? "▼" : "－";
+  return `<div class="card night ${t}">
+    <div class="card-head"><span class="name">🌙 台指期夜盤</span>
+      <span class="num ${t}-t" style="margin-left:auto;font-weight:700">${fmtP(n.close)} ${arrow}${fmtInt(Math.abs(n.change))}（${(n.change_pct * 100).toFixed(2)}%）</span></div>
+    <ul class="notes">${n.notes.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+    <p class="muted">已納入盤前推薦指數（${esc(n.ref_date.slice(5))} 日盤收 ${fmtP(n.ref_close)}，${esc(n.month)} 合約）</p>
+  </div>`;
 }
 
 /* ---------- 共用元件 ---------- */
@@ -137,14 +169,14 @@ async function renderList() {
       <div class="card-head">
         <span class="rank num">${r.rank}</span>
         <span class="name">${esc(r.name)}</span><span class="code">${esc(r.code)}</span>
-        ${badge(r.index)}
+        ${r.pre_index != null ? `<span class="badge-wrap">${badge(r.pre_index)}<small class="muted">盤前・昨收 ${r.index}</small></span>` : badge(r.index)}
       </div>
       <div class="meters">${meter("外資", r.foreign_score)}${meter("新聞", r.news_score)}</div>
       <p class="reason">${esc(r.reason)}</p>
       ${side === "buy" ? levelsLine(r.levels) : `<p class="levels muted">持有者可考慮減碼${r.levels ? `；跌破 <b class="num">${fmtP(r.levels.stop)}</b>（-${Math.round(r.levels.stop_pct * 100)}%）宜停損` : ""}</p>`}
       <div class="chips">${(r.keywords || []).map(k => `<span class="chip ${side === "buy" ? "up" : "down"}">${esc(k)}</span>`).join("")}</div>
     </a>`).join("");
-  return (await alertsBlock())
+  return nightBlock(d.night) + (await alertsBlock())
     + seg("listSide", side, [["buy", `建議買入 ${d.buy.length}`, "up"], ["sell", `賣出／避開 ${d.sell.length}`, "down"]])
     + `<p class="muted" style="margin-bottom:10px">${side === "buy" ? "外資連買或大買，且新聞偏利多" : "外資連賣或大賣，且新聞偏利空"}</p>`
     + (rows.length ? cards : empty("今日沒有同時符合外資與新聞條件的標的"))

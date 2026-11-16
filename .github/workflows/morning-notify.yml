@@ -1,4 +1,4 @@
-# 每個交易日早上推播「前一個交易日」的觀察清單（LINE / Telegram / ntfy）。
+# 每個交易日早上：抓台指期夜盤 → 更新盤前推薦指數與 App → 推播「前一個交易日」的觀察清單（LINE / Telegram / ntfy）。
 # 需要在 Settings → Secrets and variables → Actions 設定至少一組推播憑證，見 README。
 name: Morning notify
 
@@ -15,7 +15,9 @@ on:
         default: false
 
 permissions:
-  contents: write   # 推播紀錄存回 data 分支，避免重複推播
+  contents: write   # 夜盤資料與推播紀錄存回 data 分支
+  pages: write
+  id-token: write
 
 concurrency:
   group: daily-update   # 與每日更新共用，避免同時改寫資料庫
@@ -24,7 +26,7 @@ concurrency:
 jobs:
   notify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       TZ: Asia/Taipei
       DATABASE_URL: sqlite:///data/twstock.db
@@ -51,7 +53,14 @@ jobs:
           git fetch --depth=1 origin data
           git show FETCH_HEAD:twstock.db > data/twstock.db
 
+      - name: 抓台指期夜盤
+        run: python -m app.cli night
+
+      - name: 更新 App（加入夜盤與盤前指數）
+        run: python -m app.cli export --out site --days 20
+
       - name: 推播最新清單
+        continue-on-error: true   # 推播失敗仍保存資料並更新 App
         run: python -m app.cli notify ${{ github.event.inputs.force == 'true' && '--force' || '' }}
 
       - name: 推播紀錄存回 data 分支
@@ -65,3 +74,17 @@ jobs:
           git add twstock.db
           git commit -q -m "notify: $(date +%F_%H%M)"
           git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: notify
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

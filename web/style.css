@@ -141,3 +141,10 @@ h2 { font-size: 16px; margin: 18px 0 10px; }
 .btn { font: inherit; font-weight: 600; min-height: 38px; padding: 0 14px; border-radius: 10px; border: 0;
   background: var(--accent); color: #fff; cursor: pointer; }
 .btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+
+.badge-wrap { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.badge-wrap .badge { margin-left: 0; }
+.badge-wrap small { font-size: 11px; }
+.night { border-left: 4px solid var(--border); }
+.night.up { border-left-color: var(--up); } .night.down { border-left-color: var(--down); }
+.notes { margin: 6px 0 4px; padding-left: 18px; font-size: 14px; }

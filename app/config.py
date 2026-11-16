@@ -61,6 +61,16 @@ class RiskConfig:
 
 
 @dataclass(frozen=True)
+class NightConfig:
+    """台指期夜盤對隔日（盤前）推薦的影響。"""
+    contract: str = "TX"
+    weight: float = 0.15      # 夜盤分數加到綜合分數的權重 → 推薦指數最多約 ±7.5 分
+    scale: float = 0.01       # 夜盤分數 = tanh(漲跌幅 / 1%)
+    big_move: float = 0.015   # 漲跌超過 1.5% 視為大波動，附上進場提醒
+    beta: float = 1.0         # 估算個股開盤價時假設與大盤同幅度
+
+
+@dataclass(frozen=True)
 class Settings:
     database_url: str = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'twstock.db'}")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
@@ -79,6 +89,7 @@ class Settings:
     )
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
+    night: NightConfig = field(default_factory=NightConfig)
 
 
 settings = Settings()

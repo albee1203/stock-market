@@ -11,6 +11,7 @@ from dataclasses import asdict
 
 from .analysis.scoring import compute_foreign_metrics, compute_news_metrics, foreign_metrics_as_dicts
 from .config import settings
+from .night import apply_pre_index, gap_alerts, night_info
 from .risk import alerts_for, index_label, levels_for, to_index, track_positions
 from .collectors.news import news_window
 from .db import DailyPrice, ForeignFlow, NewsArticle, Recommendation, Stock
@@ -31,6 +32,8 @@ def get_recommendations(session: Session, d: date) -> dict:
     out: dict = {"date": d.isoformat(), "buy": [], "sell": [], "disclaimer": DISCLAIMER}
     rows = list(rows)
     levels = levels_for(session, {r.code for r in rows}, d) if rows else {}
+    night = night_info(session, d)
+    out["night"] = night
     for r in rows:
         idx = to_index(r.total_score)
         lv = levels.get(r.code)
@@ -43,6 +46,7 @@ def get_recommendations(session: Session, d: date) -> dict:
             "net_amount_e8": round(r.net_amount / 1e8, 2) if r.net_amount is not None else None,
             "news_count": r.news_count, "keywords": json.loads(r.keywords), "reason": r.reason,
         })
+    apply_pre_index(out["buy"] + out["sell"], night)
     return out
 
 
@@ -120,4 +124,7 @@ def get_alerts(session: Session, d: date) -> dict:
     positions = track_positions(session, d)
     open_pos = [asdict(p) for p in positions if p.status == "open"]
     open_pos.sort(key=lambda p: p["ret"] or 0, reverse=True)
-    return {"alerts": alerts_for(positions, d), "open": open_pos}
+    night = night_info(session, d)
+    triggered = {p.code for p in positions if p.close_date == d.isoformat()}
+    gaps = gap_alerts([p for p in open_pos if p["code"] not in triggered], night)
+    return {"alerts": alerts_for(positions, d), "open": open_pos, "gap_alerts": gaps}

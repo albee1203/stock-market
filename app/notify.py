@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from . import services
 from .backtest import compute_backtest, fmt_pct
 from .config import TZ
+from .night import gap_alerts, night_info
 from .risk import check_holdings, fmt_price, load_holdings
 from .db import NotificationLog
 
@@ -36,7 +37,11 @@ WEEKDAYS = "一二三四五六日"
 
 def _line(r: dict, side: str) -> str:
     flow = r["reason"].split("｜")[0].split("，")[:2]  # 只取外資的前兩段，保持簡短
-    out = f"{r['rank']}. {r['name']} {r['code']}｜推薦指數 {r['index']}（{r['label']}）\n   {'，'.join(flow)}"
+    if r.get("pre_index") is not None:
+        idx = f"盤前指數 {r['pre_index']}（{r['pre_label']}，昨收 {r['index']}）"
+    else:
+        idx = f"推薦指數 {r['index']}（{r['label']}）"
+    out = f"{r['rank']}. {r['name']} {r['code']}｜{idx}\n   {'，'.join(flow)}"
     lv = r.get("levels")
     if side == "buy" and lv:
         out += (f"\n   參考停損 {fmt_price(lv['stop'])}（-{lv['stop_pct']:.0%}）"
@@ -49,12 +54,19 @@ ALERT_ICON = {"stop": "🛑", "near_stop": "⚠️", "take": "🎯", "near_take"
 
 def _alert_lines(session: Session, d: date) -> list[str]:
     lines = []
-    for a in services.get_alerts(session, d)["alerts"]:
+    for a in services.get_alerts(session, d)["alerts"]:  # noqa: B007
         price = a["exit_price"] or a["last_close"]
         lines.append(f"{ALERT_ICON.get(a['kind'], '•')} {a['name']} {a['code']} {a['text']}："
                      f"收盤 {fmt_price(price)}，{a['open_date'][5:]} 入清單起 {fmt_pct(a['ret'])}"
                      f"（停損 {fmt_price(a['stop'])}／停利 {fmt_price(a['take'])}）")
-    for h in check_holdings(session, d, load_holdings()):
+    al = services.get_alerts(session, d)
+    holdings = check_holdings(session, d, load_holdings())
+    night = night_info(session, d)
+    for g in al["gap_alerts"] + [dict(h, prefix="持股 ") for h in gap_alerts(
+            [h for h in holdings if h["kind"] not in ("stop", "take")], night)]:
+        lines.append(f"🌙 {g.get('prefix', '')}{g['name']} {g['code']} {g['text']}：昨收 {fmt_price(g.get('last_close') or g['close'])}"
+                     f" → 預估 {fmt_price(g['est_open'])}（停損 {fmt_price(g['stop'])}／停利 {fmt_price(g['take'])}）")
+    for h in holdings:
         if h["kind"] == "ok":
             continue
         lines.append(f"{ALERT_ICON.get(h['kind'], '•')} 持股 {h['name']} {h['code']} {h['text']}："
@@ -66,8 +78,15 @@ def _alert_lines(session: Session, d: date) -> list[str]:
 def build_message(session: Session, d: date, app_url: str = "") -> tuple[str, str]:
     """回傳 (標題, 內文)。"""
     rec = services.get_recommendations(session, d)
-    title = f"台股觀察清單｜{d:%m/%d}（{WEEKDAYS[d.weekday()]}）收盤資料"
+    title = f"台股觀察清單｜{d:%m/%d}（{WEEKDAYS[d.weekday()]}）收盤＋夜盤" if rec.get("night") else \
+        f"台股觀察清單｜{d:%m/%d}（{WEEKDAYS[d.weekday()]}）收盤資料"
     parts = [f"📊 {title}"]
+    night = rec.get("night")
+    if night:
+        arrow = "▲" if night["change"] > 0 else "▼" if night["change"] < 0 else "－"
+        parts.append(f"\n🌙 台指期夜盤 {fmt_price(night['close'])}  {arrow}{abs(night['change']):,.0f}"
+                     f"（{night['change_pct'] * 100:+.2f}%）")
+        parts += [f"・{n}" for n in night["notes"]]
     alerts = _alert_lines(session, d)
     if alerts:
         parts.append("\n🔔 停損停利提醒")

@@ -29,7 +29,7 @@ def test_message_content(session):
     assert "建議買入" in text and "建議賣出" in text and "台積電 2330" in text
     assert "回測" in text and "https://example.github.io/stock-market/" in text
     assert "非投資建議" in text
-    assert "推薦指數" in text and "參考停損" in text
+    assert "盤前指數" in text and "昨收" in text and "參考停損" in text  # 示範資料含夜盤
 
 
 def test_holdings_alert_in_message(session, monkeypatch):

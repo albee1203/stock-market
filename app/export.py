@@ -54,7 +54,8 @@ def export_day(session: Session, d) -> dict:
     for side in ("buy", "sell"):
         for r in foreign[side]:
             r["index"] = scores.get(r["code"])
-    return {"date": d.isoformat(), "buy": rec["buy"], "sell": rec["sell"], "foreign": foreign, "news": news,
+    return {"date": d.isoformat(), "buy": rec["buy"], "sell": rec["sell"], "night": rec["night"],
+            "foreign": foreign, "news": news,
             "scores": scores, **services.get_alerts(session, d)}
 
 
@@ -98,6 +99,7 @@ def export_site(session: Session, out: Path, days: int = 20) -> dict:
         "dates": [d.isoformat() for d in dates],
         "disclaimer": services.DISCLAIMER,
         "risk": asdict(settings.risk),
+        "night": asdict(settings.night),
     }
     _dump(data / "index.json", index)
     return {"out": str(out), "days": len(dates), "stocks_with_history": n_hist}
