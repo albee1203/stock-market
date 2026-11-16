@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>台股觀察清單</title>
+  <meta name="description" content="每日外資籌碼 × 新聞情緒的台股觀察清單">
+  <meta name="theme-color" content="#b91c1c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="台股清單">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">
+      <h1>台股觀察清單</h1>
+      <p id="updated" class="muted">載入中…</p>
+    </div>
+    <div class="actions">
+      <select id="date" aria-label="交易日"></select>
+      <button id="install" class="icon-btn" hidden aria-label="安裝 App">⤓</button>
+      <button id="refresh" class="icon-btn" aria-label="重新整理">↻</button>
+    </div>
+  </header>
+  <div id="offline" class="banner" hidden>目前離線，顯示的是上次載入的資料</div>
+  <main id="view" tabindex="-1"></main>
+  <nav class="tabbar" aria-label="主選單">
+    <a href="#/list" data-tab="list"><span aria-hidden="true">★</span>清單</a>
+    <a href="#/foreign" data-tab="foreign"><span aria-hidden="true">⇅</span>外資</a>
+    <a href="#/news" data-tab="news"><span aria-hidden="true">≡</span>新聞</a>
+    <a href="#/stock" data-tab="stock"><span aria-hidden="true">⌕</span>個股</a>
+  </nav>
+  <script src="app.js" defer></script>
+</body>
+</html>

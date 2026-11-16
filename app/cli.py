@@ -5,6 +5,7 @@
   python -m app.cli rescore [--date ...]       # 只重新計算評分（調參數後用）
   python -m app.cli demo                       # 載入離線示範資料
   python -m app.cli show [--date ...]          # 在終端機印出清單
+  python -m app.cli export [--out site]        # 匯出手機 App 用的靜態網站
 """
 from __future__ import annotations
 
@@ -57,6 +58,10 @@ def main(argv: list[str] | None = None) -> None:
         x = sub.add_parser(name)
         x.add_argument("--date", type=_date, default=None)
 
+    e = sub.add_parser("export", help="匯出手機 App（PWA）用的靜態網站")
+    e.add_argument("--out", default="site")
+    e.add_argument("--days", type=int, default=20, help="保留最近幾個交易日")
+
     d = sub.add_parser("demo", help="載入離線示範資料")
     d.add_argument("--date", type=_date, default=None)
 
@@ -86,6 +91,9 @@ def main(argv: list[str] | None = None) -> None:
                 print("資料庫尚無資料")
                 return
             _print_lists(services.get_recommendations(s, d))
+        elif args.cmd == "export":
+            from .export import export_site
+            print(json.dumps(export_site(s, args.out, args.days), ensure_ascii=False))
         elif args.cmd == "demo":
             d = __import__("app.demo", fromlist=["seed_demo"]).seed_demo(s, args.date or today)
             _print_lists(services.get_recommendations(s, d))
