@@ -624,6 +624,14 @@ $("#date").addEventListener("change", async e => {
 });
 
 $("#refresh").addEventListener("click", async () => {
+  // 先檢查 App 本身有沒有新版；有的話換上新版後整頁重新載入
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) {
+      await reg.update();
+      if (reg.installing || reg.waiting) return; // controllerchange 會觸發重新載入
+    }
+  } catch { /* 忽略 */ }
   cache.clear();
   state.backtest = null;
   await boot(true);
@@ -655,6 +663,12 @@ async function boot(fresh = false) {
 }
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register("sw.js").catch(() => {});
+  // 新版 App 接手時自動重新載入一次，才能看到新畫面（第一次安裝時不重載）
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController && !reloaded) { reloaded = true; location.reload(); }
+  });
 }
 boot(true);
