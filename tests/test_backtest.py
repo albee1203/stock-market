@@ -27,13 +27,14 @@ def test_returns_excess_and_win_rate(session):
     up = [100 * 1.01 ** i for i in range(30)]   # 每天 +1%
     flat = [100.0] * 30
     down = [100 * 0.99 ** i for i in range(30)]
-    _seed(session, {"A": up, "B": flat, "C": down}, [(0, "A", "buy"), (0, "C", "sell"), (20, "A", "buy")])
+    _seed(session, {"1101": up, "1102": flat, "1103": down, "030001": [100 * 0.8 ** i for i in range(30)]},
+          [(0, "1101", "buy"), (0, "1103", "sell"), (20, "1101", "buy")])
     bt = compute_backtest(session)
-    a0 = next(r for r in bt["details"] if r["code"] == "A" and r["date"] == "2026-10-01")
+    a0 = next(r for r in bt["details"] if r["code"] == "1101" and r["date"] == "2026-10-01")
     assert a0["r1"] == pytest.approx(0.01, abs=1e-4)
     assert a0["r5"] == pytest.approx(1.01 ** 5 - 1, abs=1e-4)
     assert a0["r20"] == pytest.approx(1.01 ** 20 - 1, abs=1e-4)
-    # 基準＝A、B、C 等權平均
+    # 基準＝三檔普通股等權平均（權證 030001 不計入）
     bench5 = ((1.01 ** 5 - 1) + 0 + (0.99 ** 5 - 1)) / 3
     assert a0["x5"] == pytest.approx(a0["r5"] - bench5, abs=1e-4)
     # 第 20 天的清單：20 日後超出資料範圍 → None，不計入統計

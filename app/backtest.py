@@ -4,7 +4,7 @@
 - 報酬 = 第 D+N 個交易日收盤價 / 清單日 D 收盤價 − 1（收盤對收盤）。
   清單在收盤後才產生，實際上最快隔天才能進場，因此實際績效會與此不同。
 - 未還原除權息：除息日附近的報酬會被低估。
-- 基準 = 同期間所有有收盤價個股的等權平均報酬；超額報酬 = 個股報酬 − 基準。
+- 基準 = 同期間所有上市櫃普通股（排除權證、ETF）的等權平均報酬；超額報酬 = 個股報酬 − 基準。
 - 買入清單的「勝率」= 報酬 > 0 的比例；賣出清單的「勝率」= 報酬 < 0 的比例（避開成功）。
 - strategy：買入清單照停損／停利／20 日到期出場的實現報酬（見 app/risk.py）。
 """
@@ -17,6 +17,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .collectors.foreign import is_common_stock
 from .db import DailyPrice, ForeignFlow, Recommendation, Stock
 
 HORIZONS = (1, 5, 20)
@@ -61,7 +62,8 @@ def compute_backtest(session: Session, horizons: tuple[int, ...] = HORIZONS, sin
     def benchmark(d0: date, d1: date) -> float | None:
         if (d0, d1) not in bench_cache:
             a, b = closes.get(d0, {}), closes.get(d1, {})
-            rets = [b[c] / a[c] - 1 for c in a.keys() & b.keys()]
+            # 只用普通股：股價表含權證、ETF 等，權證時間價值快速流失會把基準拉低、讓超額報酬虛胖
+            rets = [b[c] / a[c] - 1 for c in a.keys() & b.keys() if is_common_stock(c)]
             bench_cache[(d0, d1)] = statistics.fmean(rets) if rets else None
         return bench_cache[(d0, d1)]
 
@@ -103,7 +105,7 @@ def compute_backtest(session: Session, horizons: tuple[int, ...] = HORIZONS, sin
         "list_days": len(rec_dates),
         "summary": summary,
         "details": details,
-        "method": "收盤對收盤報酬（清單日收盤 → 第 N 個交易日收盤），未還原除權息；基準為全市場等權平均。",
+        "method": "收盤對收盤報酬（清單日收盤 → 第 N 個交易日收盤），未還原除權息；基準為上市櫃普通股等權平均（不含權證、ETF）。",
     }
 
 
