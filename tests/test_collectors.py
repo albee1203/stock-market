@@ -78,3 +78,29 @@ def test_parse_rss():
 def test_parse_twse_tables_format():
     payload = {"stat": "OK", "tables": [{"title": "外資及陸資買賣超彙總表", "fields": TWSE_T38U["fields"], "data": TWSE_T38U["data"]}]}
     assert [r.code for r in foreign.parse_twse(payload)] == ["2330", "2002"]
+
+
+# 實際格式（2026-11 由 GitHub Actions 取得的欄位）：兩層表頭，欄位名稱不含「外資」字樣
+TWSE_REAL = {"stat": "OK", "fields": ["", "證券代號", "證券名稱", "買進股數", "賣出股數", "買賣超股數", "買進股數", "賣出股數",
+                                      "買賣超股數", "買進股數", "賣出股數", "買賣超股數"],
+             "data": [[" ", "2330 ", "台積電", "20,000,000", "13,800,000", "6,200,000", "100", "0", "100",
+                       "20,000,100", "13,800,000", "6,200,100"]]}
+TPEX_REAL = {"tables": [{"fields": ["代號", "名稱"] + ["買進股數", "賣出股數", "買賣超股數"] * 7 + ["三大法人買賣超股數合計"],
+                         "data": [["6223", "旺矽", "300,000", "105,000", "195,000"] + ["0"] * 18 + ["195,000"]]}]}
+
+
+def test_parse_real_two_level_headers():
+    r = foreign.parse_twse(TWSE_REAL)[0]
+    assert (r.code, r.name, r.buy_shares, r.sell_shares, r.net_shares) == ("2330", "台積電", 20_000_000, 13_800_000, 6_200_000)
+    r = foreign.parse_tpex(TPEX_REAL)[0]
+    assert (r.code, r.net_shares) == ("6223", 195_000)
+
+
+def test_parse_twse_mi_index_picks_quote_table():
+    payload = {"stat": "OK", "tables": [
+        {"title": "價格指數", "fields": ["指數", "收盤指數", "漲跌"], "data": [["發行量加權股價指數", "23,000", "+"]]},
+        {"title": "每日收盤行情", "fields": ["證券代號", "證券名稱", "成交股數", "成交筆數", "成交金額", "開盤價", "最高價",
+                                             "最低價", "收盤價"], "data": [["2330", "台積電", "28,000,000", "1", "1", "1", "1", "1", "1,050.00"]]},
+    ]}
+    rows = prices.parse_twse(payload)
+    assert len(rows) == 1 and rows[0].code == "2330" and rows[0].close == 1050.0 and rows[0].volume == 28_000_000

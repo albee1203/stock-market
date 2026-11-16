@@ -10,7 +10,7 @@ from . import http
 
 log = logging.getLogger(__name__)
 
-TWSE_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL"
+TWSE_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"  # 每日收盤行情（含所有上市股票）
 TPEX_URL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyQuotes"
 
 
@@ -39,20 +39,26 @@ def _parse(fields: list[str], rows: list[list[Any]]) -> list[PriceRow]:
     ]
 
 
+def _is_quote_table(fields: list) -> bool:
+    fs = [str(f) for f in fields or []]
+    return http.find_col(fs, "代號") is not None and http.find_col(fs, "收盤") is not None
+
+
 def parse_twse(payload: dict[str, Any]) -> list[PriceRow]:
-    if payload.get("stat") != "OK":
+    if payload.get("stat") not in (None, "OK", "ok"):
         return []
-    if payload.get("data"):
+    if payload.get("data") and _is_quote_table(payload.get("fields")):
         return _parse(payload["fields"], payload["data"])
+    # MI_INDEX 回傳多張表（大盤指數、漲跌統計…），要挑有「證券代號＋收盤價」的那張
     for table in payload.get("tables") or []:
-        if table.get("data"):
+        if table.get("data") and _is_quote_table(table.get("fields")):
             return _parse(table["fields"], table["data"])
     return []
 
 
 def parse_tpex(payload: dict[str, Any]) -> list[PriceRow]:
     for table in payload.get("tables") or []:
-        if table.get("data"):
+        if table.get("data") and _is_quote_table(table.get("fields")):
             return _parse(table["fields"], table["data"])
     return []
 
@@ -60,7 +66,7 @@ def parse_tpex(payload: dict[str, Any]) -> list[PriceRow]:
 def fetch_all(d: date) -> list[PriceRow]:
     out: list[PriceRow] = []
     jobs = (
-        ("TWSE", TWSE_URL, {"date": d.strftime("%Y%m%d"), "response": "json"}, parse_twse),
+        ("TWSE", TWSE_URL, {"date": d.strftime("%Y%m%d"), "type": "ALLBUT0999", "response": "json"}, parse_twse),
         ("TPEX", TPEX_URL, {"date": d.strftime("%Y/%m/%d"), "response": "json"}, parse_tpex),
     )
     for name, url, params, parser in jobs:

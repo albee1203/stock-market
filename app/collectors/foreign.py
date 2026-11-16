@@ -48,10 +48,14 @@ def _parse_table(fields: list[str], rows: list[list[Any]], market: str) -> list[
     i_buy = http.find_col(fields, "外", "買進", exclude=("自營商買進",))
     i_sell = http.find_col(fields, "外", "賣出", exclude=("自營商賣出",))
     i_net = http.find_col(fields, "外", "買賣超", exclude=("自營商買賣超",))
-    if None in (i_code, i_name, i_net):
-        # 舊版 / 無欄位名稱時的預設欄位位置：代號, 名稱, 買進, 賣出, 買賣超
-        i_code, i_name, i_buy, i_sell, i_net = 0, 1, 2, 3, 4
-        log.warning("%s 欄位名稱無法辨識，改用預設欄位位置：%s", market, fields)
+    if i_net is None:
+        # 官方表格是兩層表頭：欄位名稱只寫「買進股數／賣出股數／買賣超股數」，
+        # 「外資及陸資(不含外資自營商)」寫在上一層，且固定是名稱後的第一組。
+        i_code = i_code if i_code is not None else 0
+        i_name = i_name if i_name is not None else i_code + 1
+        i_buy, i_sell, i_net = i_name + 1, i_name + 2, i_name + 3
+        if fields and not ("買賣超" in fields[i_net] if i_net < len(fields) else False):
+            log.warning("%s 欄位無法辨識，請檢查格式：%s", market, fields)
     out: list[FlowRow] = []
     for r in rows:
         code = str(r[i_code]).strip()
