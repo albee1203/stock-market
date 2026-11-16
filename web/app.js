@@ -128,7 +128,14 @@ async function alertsBlock() {
 }
 
 function nightBlock(n) {
-  if (!n) return "";
+  if (!n) {
+    // 只在最新一天顯示「等待夜盤」提示；舊日期沒有夜盤就不顯示
+    if (!state.index || state.date !== state.index.latest) return "";
+    return `<div class="card night">
+      <div class="card-head"><span class="name">🌙 台指期夜盤</span><span class="muted" style="margin-left:auto">尚未更新</span></div>
+      <p class="muted" style="margin:6px 0 0">${esc(state.date.slice(5))} 收盤後的夜盤（15:00～隔日 05:00）會在隔天早上 08:40 抓取，並納入盤前推薦指數與跳空預警。</p>
+    </div>`;
+  }
   const t = n.change_pct > 0 ? "up" : n.change_pct < 0 ? "down" : "";
   const arrow = n.change > 0 ? "▲" : n.change < 0 ? "▼" : "－";
   return `<div class="card night ${t}">
