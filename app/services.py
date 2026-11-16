@@ -128,3 +128,10 @@ def get_alerts(session: Session, d: date) -> dict:
     triggered = {p.code for p in positions if p.close_date == d.isoformat()}
     gaps = gap_alerts([p for p in open_pos if p["code"] not in triggered], night)
     return {"alerts": alerts_for(positions, d), "open": open_pos, "gap_alerts": gaps}
+
+
+def get_portfolio(session: Session, d: date, holdings_text: str | None = None) -> dict:
+    from .portfolio import portfolio
+    from .risk import load_holdings, parse_holdings
+    holdings = parse_holdings(holdings_text) if holdings_text is not None else load_holdings()
+    return portfolio(session, d, holdings)

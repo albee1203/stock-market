@@ -5,7 +5,7 @@
   TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID   Telegram Bot
   NTFY_TOPIC [+ NTFY_SERVER]              ntfy（https://ntfy.sh），手機裝 ntfy App 訂閱同名主題
   APP_URL                                 訊息中附上的 App 網址
-  HOLDINGS                                我的持股（選用），每行「代號,成本[,停損%,停利%]」，用於持股停損停利提醒
+  HOLDINGS                                我的持股（選用），每行「代號,成本[,停損%,停利%][,股數=1000][,日期=2026-11-01]」
 
 註：LINE Notify 已於 2025-03-31 停止服務，故使用 LINE Messaging API。
 """
@@ -25,6 +25,7 @@ from . import services
 from .backtest import compute_backtest, fmt_pct
 from .config import TZ
 from .night import gap_alerts, night_info
+from .portfolio import portfolio
 from .risk import check_holdings, fmt_price, load_holdings
 from .db import NotificationLog
 
@@ -66,12 +67,36 @@ def _alert_lines(session: Session, d: date) -> list[str]:
             [h for h in holdings if h["kind"] not in ("stop", "take")], night)]:
         lines.append(f"🌙 {g.get('prefix', '')}{g['name']} {g['code']} {g['text']}：昨收 {fmt_price(g.get('last_close') or g['close'])}"
                      f" → 預估 {fmt_price(g['est_open'])}（停損 {fmt_price(g['stop'])}／停利 {fmt_price(g['take'])}）")
-    for h in holdings:
-        if h["kind"] == "ok":
-            continue
-        lines.append(f"{ALERT_ICON.get(h['kind'], '•')} 持股 {h['name']} {h['code']} {h['text']}："
-                     f"收盤 {fmt_price(h['close'])}，成本 {fmt_price(h['cost'])}（{fmt_pct(h['ret'])}），"
-                     f"停損 {fmt_price(h['stop'])}／停利 {fmt_price(h['take'])}")
+    return lines  # 持股本身的停損停利狀態列在「💼 我的持股」段落
+
+
+def _money(x: float | None) -> str:
+    return "—" if x is None else f"{x:+,.0f} 元"
+
+
+def _portfolio_lines(session: Session, d: date) -> list[str]:
+    pf = portfolio(session, d, load_holdings())
+    if not pf["items"]:
+        return []
+    lines = ["\n💼 我的持股"]
+    t = pf["totals"]
+    if t:
+        lines.append(f"總損益 {_money(t['pnl'])}（{fmt_pct(t['pnl_pct'])}）｜今日 {_money(t['day_pnl'])}"
+                     f"｜市值 {t['value']:,.0f} 元")
+        if t["priced"] < t["count"]:
+            lines.append(f"（總計只含有填股數的 {t['priced']}/{t['count']} 檔）")
+    for it in pf["items"]:
+        icon = ALERT_ICON.get(it["kind"], "⚠️" if any(x["tone"] == "down" for x in it["signals"]) else "•")
+        line = f"{icon} {it['name']} {it['code']}｜{fmt_pct(it['ret'])}"
+        if it.get("pnl") is not None:
+            line += f"（{_money(it['pnl'])}）"
+        if it.get("day_change") is not None:
+            line += f"，今日 {fmt_pct(it['day_change'])}"
+        line += f"\n   收盤 {fmt_price(it['close'])}｜指數 {it['index']}｜"
+        line += it["text"] if it["kind"] != "ok" else f"停損 {fmt_price(it['stop'])}／停利 {fmt_price(it['take'])}"
+        if it["signals"]:
+            line += "\n   " + "、".join(x["text"] for x in it["signals"])
+        lines.append(line)
     return lines
 
 
@@ -91,6 +116,7 @@ def build_message(session: Session, d: date, app_url: str = "") -> tuple[str, st
     if alerts:
         parts.append("\n🔔 停損停利提醒")
         parts += alerts
+    parts += _portfolio_lines(session, d)
     for side, head in (("buy", "📈 建議買入（外資買＋新聞利多）"), ("sell", "📉 建議賣出／避開（外資賣＋新聞利空）")):
         rows = rec[side][:TOP_N]
         parts.append(f"\n{head}")

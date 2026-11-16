@@ -148,3 +148,14 @@ h2 { font-size: 16px; margin: 18px 0 10px; }
 .night { border-left: 4px solid var(--border); }
 .night.up { border-left-color: var(--up); } .night.down { border-left-color: var(--down); }
 .notes { margin: 6px 0 4px; padding-left: 18px; font-size: 14px; }
+
+.hgrid { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 2px 10px; margin-top: 8px; font-size: 14px; align-items: baseline; }
+.hgrid b { font-weight: 600; }
+.row-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 8px; }
+.row-actions .muted { margin-right: auto; }
+.row-actions .btn { min-height: 34px; padding: 0 12px; }
+details.card summary { cursor: pointer; }
+textarea { width: 100%; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
+.tabbar a { font-size: 11px; }
+.hold-form input[type="date"] { width: 140px; }

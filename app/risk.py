@@ -202,8 +202,15 @@ def alerts_for(positions: list[Position], d: date) -> list[dict]:
 
 # ---------- 我的持股（推播用；App 內的持股存在手機本機） ----------
 
+_KEYS = {"股數": "shares", "shares": "shares", "張": "lots", "lots": "lots", "停損": "stop_pct", "sl": "stop_pct",
+         "停利": "take_pct", "tp": "take_pct", "日期": "date", "date": "date"}
+
+
 def parse_holdings(text: str) -> list[dict]:
-    """每行：代號,成本[,停損%,停利%]，例如「2330,980」或「2317,190,8,20」；# 開頭為註解。"""
+    """每行一檔：代號,成本[,停損%,停利%][,股數=1000][,日期=2026-11-01]；# 之後為註解，多筆可用分號隔開。
+
+    例：「2330,980」「2317,190,8,20」「2454,1200,股數=2000」「2603,180,張=3,日期=2026-10-20」
+    """
     out = []
     for line in text.replace("；", "\n").replace(";", "\n").splitlines():
         line = line.split("#", 1)[0].strip()
@@ -211,11 +218,29 @@ def parse_holdings(text: str) -> list[dict]:
             continue
         parts = [x.strip() for x in line.replace("，", ",").split(",")]
         try:
-            h = {"code": parts[0], "cost": float(parts[1])}
-            if len(parts) > 2 and parts[2]:
-                h["stop_pct"] = float(parts[2]) / 100
-            if len(parts) > 3 and parts[3]:
-                h["take_pct"] = float(parts[3]) / 100
+            h: dict = {"code": parts[0], "cost": float(parts[1])}
+            positional = []
+            for p in parts[2:]:
+                if not p:
+                    positional.append(None)
+                    continue
+                if "=" in p:
+                    k, v = (x.strip() for x in p.split("=", 1))
+                    key = _KEYS.get(k.lower(), _KEYS.get(k))
+                    if key == "shares":
+                        h["shares"] = int(float(v))
+                    elif key == "lots":
+                        h["shares"] = int(float(v) * 1000)
+                    elif key in ("stop_pct", "take_pct"):
+                        h[key] = float(v) / 100
+                    elif key == "date":
+                        h["date"] = v
+                else:
+                    positional.append(p)
+            if len(positional) > 0 and positional[0]:
+                h.setdefault("stop_pct", float(positional[0]) / 100)
+            if len(positional) > 1 and positional[1]:
+                h.setdefault("take_pct", float(positional[1]) / 100)
             out.append(h)
         except (IndexError, ValueError):
             continue
@@ -254,6 +279,7 @@ def check_holdings(session: Session, d: date, holdings: list[dict], cfg: RiskCon
         else:
             kind, text = "ok", "正常"
         out.append({"code": h["code"], "name": names.get(h["code"], h["code"]), "cost": h["cost"], "close": price,
+                    "shares": h.get("shares"), "date": h.get("date"),
                     "ret": round(price / h["cost"] - 1, 5), "stop": levels.stop, "take": levels.take,
                     "kind": kind, "text": text})
     return out

@@ -36,7 +36,7 @@ def test_holdings_alert_in_message(session, monkeypatch):
     seed_demo(session, D)
     monkeypatch.setenv("HOLDINGS", "2330,99999")
     _, text = nt.build_message(session, D, "")
-    assert "停損停利提醒" in text and "持股 台積電 2330 已跌破停損價" in text
+    assert "💼 我的持股" in text and "🛑 台積電 2330" in text and "已跌破停損價" in text
 
 
 def test_sends_once_per_date_and_channel(session):

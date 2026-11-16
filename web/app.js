@@ -3,7 +3,7 @@
 
 const $ = (s, el = document) => el.querySelector(s);
 const view = $("#view");
-const state = { backtest: null, btSide: "buy", index: null, date: null, day: null, stocks: null, listSide: "buy", foreignSide: "buy", newsFilter: "all" };
+const state = { editing: null, backtest: null, btSide: "buy", index: null, date: null, day: null, stocks: null, listSide: "buy", foreignSide: "buy", newsFilter: "all" };
 const cache = new Map();
 
 function esc(v) {
@@ -354,6 +354,212 @@ async function renderBacktest() {
     + `<p class="disclaimer">${esc(bt.method)}過去績效不代表未來表現。</p>`;
 }
 
+/* ---------- 我的持股 ---------- */
+
+const KEYMAP = { "股數": "shares", shares: "shares", "張": "lots", lots: "lots", "停損": "sl", sl: "sl", "停利": "tp", tp: "tp", "日期": "date", date: "date" };
+
+// 與 app/risk.py parse_holdings 相同格式：代號,成本[,停損%,停利%][,股數=1000][,日期=2026-11-01]
+function parseHoldingsText(text) {
+  const out = {};
+  for (let line of text.replace(/[；;]/g, "\n").split(/\n/)) {
+    line = line.split("#")[0].trim();
+    if (!line) continue;
+    const parts = line.replace(/，/g, ",").split(",").map(x => x.trim());
+    const code = parts[0], cost = parseFloat(parts[1]);
+    if (!/^\w{4,6}$/.test(code) || !(cost > 0)) continue;
+    const h = { cost }, pos = [];
+    for (const p of parts.slice(2)) {
+      if (p.includes("=")) {
+        const [k, v] = p.split("=").map(x => x.trim());
+        const key = KEYMAP[k] || KEYMAP[k.toLowerCase()];
+        if (key === "shares") h.shares = Math.round(+v);
+        else if (key === "lots") h.shares = Math.round(+v * 1000);
+        else if (key === "sl") h.stopPct = +v / 100;
+        else if (key === "tp") h.takePct = +v / 100;
+        else if (key === "date") h.date = v;
+      } else pos.push(p);
+    }
+    if (pos[0]) h.stopPct ??= +pos[0] / 100;
+    if (pos[1]) h.takePct ??= +pos[1] / 100;
+    out[code] = h;
+  }
+  return out;
+}
+
+function holdingsToText(hs) {
+  return Object.entries(hs).map(([code, h]) => {
+    const parts = [code, h.cost];
+    if (h.stopPct != null || h.takePct != null) parts.push(h.stopPct != null ? +(h.stopPct * 100).toFixed(2) : "", h.takePct != null ? +(h.takePct * 100).toFixed(2) : "");
+    if (h.shares) parts.push(`股數=${h.shares}`);
+    if (h.date) parts.push(`日期=${h.date}`);
+    return parts.join(",");
+  }).join("\n");
+}
+
+function histStreak(h) {
+  let streak = 0;
+  for (let i = h.length - 1; i >= 0; i--) {
+    const v = h[i][1];
+    if (i === h.length - 1) { streak = Math.sign(v); if (!v) break; continue; }
+    if (v !== 0 && Math.sign(v) === Math.sign(streak)) streak += Math.sign(v); else break;
+  }
+  return streak;
+}
+
+function holdingSignals(code, streak) {
+  const d = state.day, out = [];
+  if (d?.sell.some(r => r.code === code)) out.push(["列入賣出／避開名單", "down"]);
+  else if (d?.buy.some(r => r.code === code)) out.push(["列入建議買入名單", "up"]);
+  if (streak <= -3) out.push([`外資連賣 ${-streak} 日`, "down"]);
+  else if (streak >= 3) out.push([`外資連買 ${streak} 日`, "up"]);
+  let bull = 0, bear = 0;
+  for (const a of d?.news || []) {
+    const st = a.stocks.find(x => x.code === code);
+    if (!st) continue;
+    if (st.score > 0.1) bull++; else if (st.score < -0.1) bear++;
+  }
+  if (bear) out.push([`利空新聞 ${bear} 則`, "down"]);
+  if (bull) out.push([`利多新聞 ${bull} 則`, "up"]);
+  return out;
+}
+
+const fmtMoney = x => (x == null ? "—" : `${x > 0 ? "+" : ""}${Math.round(x).toLocaleString("zh-TW")}`);
+const STATUS_RANK = { stop: 0, near_stop: 1, take: 2, near_take: 3, ok: 5 };
+
+async function renderPortfolio() {
+  if (!state.stocks) state.stocks = await getJSON("data/stocks.json").catch(() => []);
+  const entries = Object.entries(state.holdings);
+  const items = [];
+  for (const [code, h] of entries) {
+    let hist = { h: [], levels: null };
+    try { hist = await getHistory(code); } catch { /* 無資料 */ }
+    const closes = hist.h.filter(x => x[2] != null);
+    const price = closes.at(-1)?.[2] ?? null, prev = closes.at(-2)?.[2] ?? null;
+    const name = state.stocks.find(x => x[0] === code)?.[1] || code;
+    const it = { code, name, ...h, price, prev };
+    if (price != null) {
+      it.lv = calcLevels(h.cost, hist.levels?.sigma ?? null, h.stopPct, h.takePct);
+      [it.kind, it.text] = holdingStatus(price, it.lv);
+      it.ret = price / h.cost - 1;
+      it.day = prev ? price / prev - 1 : null;
+      if (h.shares) {
+        it.value = h.shares * price; it.costValue = h.shares * h.cost;
+        it.pnl = it.value - it.costValue; it.dayPnl = prev ? h.shares * (price - prev) : null;
+      }
+    } else { it.kind = "ok"; it.text = "查無股價"; }
+    it.index = state.day?.scores?.[code];
+    it.signals = holdingSignals(code, histStreak(hist.h));
+    items.push(it);
+  }
+  items.sort((a, b) => (STATUS_RANK[a.kind] ?? 5) - (a.kind === "ok" && a.signals.some(x => x[1] === "down") ? 1 : 0)
+    - ((STATUS_RANK[b.kind] ?? 5) - (b.kind === "ok" && b.signals.some(x => x[1] === "down") ? 1 : 0)) || (a.ret ?? 0) - (b.ret ?? 0));
+
+  const priced = items.filter(i => i.value != null);
+  const sum = k => priced.reduce((a, i) => a + (i[k] ?? 0), 0);
+  const cost = sum("costValue"), value = sum("value"), pnl = value - cost, dayPnl = sum("dayPnl");
+  const summary = priced.length ? `
+    <div class="card">
+      <div class="stats" style="margin:0">
+        <div class="stat"><span class="muted">總市值</span><b class="num">${fmtInt(value)}</b></div>
+        <div class="stat"><span class="muted">未實現損益</span><b class="num ${pctCls(pnl)}">${fmtMoney(pnl)}</b><span class="muted num ${pctCls(pnl)}">${pct(cost ? pnl / cost : null)}</span></div>
+        <div class="stat"><span class="muted">今日損益</span><b class="num ${pctCls(dayPnl)}">${fmtMoney(dayPnl)}</b></div>
+      </div>
+      ${priced.length < items.length ? `<p class="muted" style="margin:8px 0 0">總計只含有填股數的 ${priced.length}/${items.length} 檔。</p>` : ""}
+    </div>` : "";
+
+  const cards = items.map(it => {
+    const warn = it.kind !== "ok" ? `<p class="${it.kind.includes("stop") ? "down-t" : "up-t"}" style="margin:6px 0 0"><b>${ALERT_ICON[it.kind] || ""} ${esc(it.text)}</b></p>` : "";
+    return `<div class="card holding" data-code="${esc(it.code)}">
+      <div class="card-head">
+        <a href="#/stock/${esc(it.code)}" class="name" style="text-decoration:none">${esc(it.name)}</a><span class="code">${esc(it.code)}</span>
+        ${badge(it.index)}
+      </div>
+      <div class="hgrid num">
+        <span class="muted">現價</span><b>${fmtP(it.price)}</b>
+        <span class="muted">今日</span><b class="${pctCls(it.day)}">${pct(it.day)}</b>
+        <span class="muted">成本</span><b>${fmtP(it.cost)}</b>
+        <span class="muted">報酬</span><b class="${pctCls(it.ret)}">${pct(it.ret)}</b>
+        ${it.shares ? `<span class="muted">股數</span><b>${fmtInt(it.shares)}</b><span class="muted">損益</span><b class="${pctCls(it.pnl)}">${fmtMoney(it.pnl)}</b>` : ""}
+      </div>
+      ${warn}
+      ${it.lv ? levelsLine(it.lv, "") : ""}
+      ${it.signals.length ? `<div class="chips">${it.signals.map(([t, tone]) => `<span class="chip ${tone}">${esc(t)}</span>`).join("")}</div>` : ""}
+      <div class="row-actions">
+        ${it.date ? `<span class="muted">買進 ${esc(it.date)}</span>` : ""}
+        <button class="btn ghost" data-edit="${esc(it.code)}">編輯</button>
+        <button class="btn ghost" data-del="${esc(it.code)}">刪除</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  const ed = state.editing ? { code: state.editing, ...state.holdings[state.editing] } : {};
+  const options = state.stocks.map(x => `<option value="${esc(x[0])}">${esc(x[1])}</option>`).join("");
+  const form = `<div class="card" id="pf-form-card">
+    <h3 style="margin:0 0 6px;font-size:15px">${state.editing ? `編輯 ${esc(ed.code)}` : "＋ 新增持股"}</h3>
+    <form id="pf-form" class="hold-form">
+      <label>代號 <input name="code" list="pf-stocks" required value="${esc(ed.code || "")}" ${state.editing ? "readonly" : ""} placeholder="2330" inputmode="numeric" autocomplete="off"></label>
+      <label>成本 <input name="cost" type="number" step="0.01" min="0" required inputmode="decimal" value="${esc(ed.cost ?? "")}"></label>
+      <label>股數 <input name="shares" type="number" step="1" min="0" inputmode="numeric" value="${esc(ed.shares ?? "")}" placeholder="1張=1000"></label>
+      <label>買進日 <input name="date" type="date" value="${esc(ed.date || "")}"></label>
+      <label>停損% <input name="sl" type="number" step="0.5" min="0" value="${ed.stopPct != null ? esc(+(ed.stopPct * 100).toFixed(2)) : ""}" placeholder="自動"></label>
+      <label>停利% <input name="tp" type="number" step="0.5" min="0" value="${ed.takePct != null ? esc(+(ed.takePct * 100).toFixed(2)) : ""}" placeholder="自動"></label>
+      <button class="btn">${state.editing ? "儲存" : "加入"}</button>
+      ${state.editing ? `<button type="button" class="btn ghost" data-cancel>取消</button>` : ""}
+    </form>
+    <datalist id="pf-stocks">${options}</datalist>
+    <p class="muted">持股只存在這台裝置，不會上傳。停損%／停利% 留空＝依波動自動計算。</p>
+  </div>`;
+
+  const backup = `<details class="card">
+    <summary><b>備份／同步推播</b></summary>
+    <p class="muted">下方文字可以備份、搬到另一支手機，或貼到 GitHub 的 <code>HOLDINGS</code> Secret，讓早上推播也追蹤同樣的持股。</p>
+    <textarea id="pf-text" rows="5" spellcheck="false">${esc(holdingsToText(state.holdings))}</textarea>
+    <div class="row-actions" style="justify-content:flex-start">
+      <button class="btn" data-copy>複製</button>
+      <button class="btn ghost" data-import>以上方文字取代持股</button>
+    </div>
+    <p class="muted" id="pf-msg"></p>
+  </details>`;
+
+  return (items.length ? summary + cards : `<div class="empty">還沒有持股。新增後會在這裡追蹤損益、停損停利與外資／新聞訊號。</div>`)
+    + form + backup + disclaimer();
+}
+
+view.addEventListener("submit", e => {
+  if (e.target.id !== "pf-form") return;
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const code = String(f.get("code")).trim().slice(0, 6), cost = parseFloat(f.get("cost"));
+  if (!/^\w{4,6}$/.test(code) || !(cost > 0)) return;
+  const shares = parseInt(f.get("shares"), 10), sl = parseFloat(f.get("sl")), tp = parseFloat(f.get("tp")), date = f.get("date");
+  state.holdings[code] = {
+    cost, ...(shares > 0 ? { shares } : {}), ...(date ? { date } : {}),
+    ...(sl > 0 ? { stopPct: sl / 100 } : {}), ...(tp > 0 ? { takePct: tp / 100 } : {}),
+  };
+  saveHoldings(state.holdings);
+  state.editing = null;
+  render();
+});
+view.addEventListener("click", async e => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.dataset.edit) { state.editing = t.dataset.edit; await render(); $("#pf-form-card")?.scrollIntoView({ behavior: "smooth" }); }
+  else if (t.dataset.del) {
+    if (confirm(`刪除 ${t.dataset.del} 的持股紀錄？`)) { delete state.holdings[t.dataset.del]; saveHoldings(state.holdings); render(); }
+  } else if ("cancel" in t.dataset) { state.editing = null; render(); }
+  else if ("copy" in t.dataset) {
+    const text = $("#pf-text").value;
+    try { await navigator.clipboard.writeText(text); $("#pf-msg").textContent = "已複製"; }
+    catch { $("#pf-text").select(); $("#pf-msg").textContent = "請手動複製選取的文字"; }
+  } else if ("import" in t.dataset) {
+    const parsed = parseHoldingsText($("#pf-text").value);
+    const n = Object.keys(parsed).length;
+    if (!n && !confirm("沒有讀到任何持股，確定要清空？")) return;
+    if (n && !confirm(`以 ${n} 檔持股取代目前的持股？`)) return;
+    state.holdings = parsed; saveHoldings(parsed); render();
+  }
+});
+
 /* ---------- 路由 ---------- */
 
 async function render() {
@@ -363,6 +569,7 @@ async function render() {
     if (tab === "foreign") view.innerHTML = renderForeign();
     else if (tab === "news") view.innerHTML = renderNews();
     else if (tab === "backtest") view.innerHTML = await renderBacktest();
+    else if (tab === "portfolio") view.innerHTML = await renderPortfolio();
     else if (tab === "stock") view.innerHTML = await renderStock(arg ? decodeURIComponent(arg) : "");
     else view.innerHTML = await renderList();
   } catch (e) {
@@ -393,7 +600,11 @@ view.addEventListener("submit", e => {
   const cost = parseFloat(f.get("cost"));
   if (!(cost > 0)) return;
   const sl = parseFloat(f.get("sl")), tp = parseFloat(f.get("tp"));
-  state.holdings[code] = { cost, ...(sl > 0 ? { stopPct: sl / 100 } : {}), ...(tp > 0 ? { takePct: tp / 100 } : {}) };
+  const prev = state.holdings[code] || {};
+  state.holdings[code] = {
+    cost, ...(prev.shares ? { shares: prev.shares } : {}), ...(prev.date ? { date: prev.date } : {}),
+    ...(sl > 0 ? { stopPct: sl / 100 } : {}), ...(tp > 0 ? { takePct: tp / 100 } : {}),
+  };
   saveHoldings(state.holdings);
   render();
 });

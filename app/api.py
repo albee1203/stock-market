@@ -72,6 +72,14 @@ def alerts(d: date | None = Query(None, alias="date"), s: Session = Depends(db))
     return services.get_alerts(s, _resolve_date(s, d))
 
 
+@app.get("/api/portfolio")
+def portfolio(d: date | None = Query(None, alias="date"), holdings: str | None = Query(
+        None, description="持股，每行「代號,成本[,停損%,停利%][,股數=1000]」；未提供則讀 HOLDINGS 環境變數或 holdings.csv"),
+        s: Session = Depends(db)) -> dict:
+    """個人持股追蹤：損益、今日漲跌、停損停利狀態與籌碼／消息訊號。"""
+    return services.get_portfolio(s, _resolve_date(s, d), holdings)
+
+
 @app.get("/api/backtest")
 def backtest(s: Session = Depends(db)) -> dict:
     """清單出現後 1 / 5 / 20 個交易日的報酬統計與明細。"""

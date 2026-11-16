@@ -9,6 +9,7 @@
   python -m app.cli night                      # 抓台指期夜盤（盤前執行），納入最新清單的盤前指數
   python -m app.cli notify [--dry-run]         # 推播最新一份清單（LINE / Telegram / ntfy）
   python -m app.cli backtest                   # 印出回測結果
+  python -m app.cli portfolio                  # 我的持股（讀 HOLDINGS 或 holdings.csv）
   python -m app.cli replay --days 60           # 用歷史資料重新產生過去的清單（回測樣本）
 """
 from __future__ import annotations
@@ -74,6 +75,8 @@ def main(argv: list[str] | None = None) -> None:
     n.add_argument("--max-age-days", type=int, default=5, help="清單超過幾天就不推播（避免資料中斷時推舊清單）")
 
     sub.add_parser("backtest", help="印出回測結果")
+    pf = sub.add_parser("portfolio", help="我的持股追蹤")
+    pf.add_argument("--date", type=_date, default=None)
 
     rp = sub.add_parser("replay", help="用歷史資料重新產生過去的清單")
     rp.add_argument("--days", type=int, default=60)
@@ -140,6 +143,11 @@ def main(argv: list[str] | None = None) -> None:
                 res = notify(s, d, force=args.force, dry_run=args.dry_run)
                 summary["result"] = {k: v for k, v in res.items() if k != "text"}
                 print(res["text"] if args.dry_run else json.dumps(res, ensure_ascii=False))
+        elif args.cmd == "portfolio":
+            from .notify import _portfolio_lines
+            d = args.date or latest_trading_date(s)
+            lines = _portfolio_lines(s, d) if d else []
+            print("\n".join(lines) if lines else "沒有持股資料：請設定 HOLDINGS 環境變數或建立 holdings.csv")
         elif args.cmd == "backtest":
             from .backtest import compute_backtest, fmt_pct
             bt = compute_backtest(s)
