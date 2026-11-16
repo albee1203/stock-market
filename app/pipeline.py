@@ -103,7 +103,13 @@ def analyze_articles(session: Session, articles: list[NewsArticle], use_llm: boo
 
 def ensure_flow_history(session: Session, d: date, days: int = 6, max_lookback: int = 15) -> None:
     """往前補足 days 個交易日的外資資料（連買天數需要歷史）。假日抓到空資料會自動略過。"""
-    have = set(session.scalars(select(ForeignFlow.date).where(ForeignFlow.date < d).distinct()))
+    # 上市＋上櫃都有資料才算完整（避免某一市場抓取失敗的日子永遠不會補）
+    have = {
+        day for day, n in session.execute(
+            select(ForeignFlow.date, func.count(func.distinct(ForeignFlow.market)))
+            .where(ForeignFlow.date < d).group_by(ForeignFlow.date)
+        ) if n >= 2
+    }
     got = len([x for x in have if x >= d - timedelta(days=max_lookback)])
     cur = d
     for _ in range(max_lookback):
@@ -137,8 +143,12 @@ def run_daily(session: Session, d: date, use_llm: bool | None = None, with_news:
         n_analyzed = analyze_articles(session, saved, use_llm=use_llm)
 
     result = build_recommendations(session, d)
+    by_market: dict[str, int] = {}
+    for r in rows:
+        by_market[r.market] = by_market.get(r.market, 0) + 1
     return {
-        "date": d.isoformat(), "ok": True, "flows": len(rows), "news": n_news, "analyzed": n_analyzed,
+        "date": d.isoformat(), "ok": True, "flows": len(rows), "flows_by_market": by_market,
+        "news": n_news, "analyzed": n_analyzed,
         "buy": len(result["buy"]), "sell": len(result["sell"]),
     }
 

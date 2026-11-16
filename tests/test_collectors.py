@@ -73,3 +73,8 @@ def test_parse_rss():
     a = news.parse_rss(xml, "經濟日報")[0]
     assert a.title == "鴻海法說會報喜" and a.summary == "展望樂觀"
     assert a.published_at == datetime(2026, 11, 13, 8, 30)
+
+
+def test_parse_twse_tables_format():
+    payload = {"stat": "OK", "tables": [{"title": "外資及陸資買賣超彙總表", "fields": TWSE_T38U["fields"], "data": TWSE_T38U["data"]}]}
+    assert [r.code for r in foreign.parse_twse(payload)] == ["2330", "2002"]

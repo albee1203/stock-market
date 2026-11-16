@@ -36,3 +36,16 @@ def test_api(session):
     bt = c.get("/api/backtest").json()
     assert bt["summary"]["buy"]["5"]["n"] > 0
     assert c.get("/api/stocks/9999").status_code == 404
+
+
+def test_backfill_refetches_days_missing_a_market(session, monkeypatch):
+    from app import pipeline
+    from app.collectors.foreign import FlowRow
+    d0 = date(2026, 11, 12)
+    pipeline.save_flows(session, d0, [FlowRow("6223", "旺矽", "TPEX", 0, 0, 1000)])  # 只有上櫃
+    fetched = []
+    monkeypatch.setattr(pipeline.foreign, "fetch_all", lambda d: fetched.append(d) or [
+        FlowRow("2330", "台積電", "TWSE", 0, 0, 1000), FlowRow("6223", "旺矽", "TPEX", 0, 0, 1000)])
+    monkeypatch.setattr(pipeline.prices, "fetch_all", lambda d: [])
+    pipeline.ensure_flow_history(session, D, days=1, max_lookback=3)
+    assert fetched == [d0]  # 11/12 缺上市 → 重新抓

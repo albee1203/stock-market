@@ -52,6 +52,7 @@ jobs:
           mkdir -p data
           git fetch --depth=1 origin data
           git show FETCH_HEAD:twstock.db > data/twstock.db
+          git show FETCH_HEAD:last_run.json > data/last_run.json 2>/dev/null || true
 
       - name: 抓台指期夜盤
         run: python -m app.cli night
@@ -67,11 +68,12 @@ jobs:
         run: |
           tmp=$(mktemp -d)
           cp data/twstock.db "$tmp/"
+          cp data/last_run.json "$tmp/" 2>/dev/null || true
           cd "$tmp"
           git init -q -b data
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add twstock.db
+          git add twstock.db $(ls last_run.json 2>/dev/null)
           git commit -q -m "notify: $(date +%F_%H%M)"
           git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
 

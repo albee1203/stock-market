@@ -90,6 +90,16 @@ def main(argv: list[str] | None = None) -> None:
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # 收集警告／錯誤，寫進 data/last_run.json 方便排查（GitHub Actions 會一起存到 data 分支）
+    problems: list[str] = []
+
+    class _Collector(logging.Handler):
+        def emit(self, record):
+            problems.append(f"{record.levelname} {record.name}: {record.getMessage()}"[:500])
+
+    collector = _Collector(level=logging.WARNING)
+    logging.getLogger().addHandler(collector)
+    summary: dict = {"command": args.cmd, "started_at": datetime.now(TZ).isoformat(timespec="seconds")}
     init_db()
     s = get_session()
     today = datetime.now(TZ).date()
@@ -97,6 +107,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.cmd == "run":
             d = args.date or today
             res = run_daily(s, d, use_llm=args.use_llm, with_news=not args.no_news)
+            summary["result"] = res
             print(json.dumps(res, ensure_ascii=False))
             if res["ok"]:
                 _print_lists(services.get_recommendations(s, d))
@@ -116,6 +127,7 @@ def main(argv: list[str] | None = None) -> None:
         elif args.cmd == "night":
             from .night import update_night
             info = update_night(s, today)
+            summary["result"] = info
             print(json.dumps(info, ensure_ascii=False) if info else "查無夜盤資料")
         elif args.cmd == "notify":
             from .notify import notify
@@ -126,6 +138,7 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"最新清單是 {d}，已超過 {args.max_age_days} 天，不推播（資料可能中斷，請檢查每日排程）")
             else:
                 res = notify(s, d, force=args.force, dry_run=args.dry_run)
+                summary["result"] = {k: v for k, v in res.items() if k != "text"}
                 print(res["text"] if args.dry_run else json.dumps(res, ensure_ascii=False))
         elif args.cmd == "backtest":
             from .backtest import compute_backtest, fmt_pct
@@ -160,6 +173,26 @@ def main(argv: list[str] | None = None) -> None:
             _print_lists(services.get_recommendations(s, d))
     finally:
         s.close()
+        if args.cmd in ("run", "backfill", "replay", "night", "notify"):
+            _write_summary(args.cmd, summary, problems)
+
+
+def _write_summary(cmd: str, summary: dict, problems: list[str]) -> None:
+    from pathlib import Path
+
+    path = Path("data/last_run.json")
+    try:
+        allrun = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except (OSError, ValueError):
+        allrun = {}
+    summary["finished_at"] = datetime.now(TZ).isoformat(timespec="seconds")
+    summary["problems"] = problems[-50:]
+    allrun[cmd] = summary
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(allrun, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

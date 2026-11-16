@@ -69,9 +69,17 @@ def _parse_table(fields: list[str], rows: list[list[Any]], market: str) -> list[
 
 
 def parse_twse(payload: dict[str, Any]) -> list[FlowRow]:
-    if payload.get("stat") != "OK" or not payload.get("data"):
+    if payload.get("stat") not in (None, "OK", "ok"):
         return []  # 假日或尚未公布：stat 會是「很抱歉，沒有符合條件的資料!」
-    return _parse_table(payload["fields"], payload["data"], "TWSE")
+    # 舊版：{"fields": [...], "data": [...]}；新版：{"tables": [{"fields": [...], "data": [...]}]}
+    if payload.get("data"):
+        return _parse_table(payload.get("fields") or [], payload["data"], "TWSE")
+    for table in payload.get("tables") or []:
+        if table.get("data"):
+            return _parse_table(table.get("fields") or [], table["data"], "TWSE")
+    if payload.get("stat") in ("OK", "ok"):
+        log.warning("TWSE 回傳 stat=OK 但找不到資料表，欄位：%s", list(payload.keys()))
+    return []
 
 
 def parse_tpex(payload: dict[str, Any]) -> list[FlowRow]:
