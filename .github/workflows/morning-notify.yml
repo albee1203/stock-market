@@ -1,0 +1,66 @@
+# 每個交易日早上推播「前一個交易日」的觀察清單（LINE / Telegram / ntfy）。
+# 需要在 Settings → Secrets and variables → Actions 設定至少一組推播憑證，見 README。
+name: Morning notify
+
+on:
+  schedule:
+    # 台北時間週一至週五 08:40（UTC 00:40）。GitHub 排程常延遲 5~30 分鐘，
+    # 提早排程以確保 9:00 開盤前收到；想準 9:00 發送可改成 "0 1 * * 1-5"。
+    - cron: "40 0 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "已推播過也再送一次（測試用）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # 推播紀錄存回 data 分支，避免重複推播
+
+concurrency:
+  group: daily-update   # 與每日更新共用，避免同時改寫資料庫
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Asia/Taipei
+      DATABASE_URL: sqlite:///data/twstock.db
+      APP_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_TO: ${{ secrets.LINE_TO }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 從 data 分支還原資料庫
+        run: |
+          mkdir -p data
+          git fetch --depth=1 origin data
+          git show FETCH_HEAD:twstock.db > data/twstock.db
+
+      - name: 推播最新清單
+        run: python -m app.cli notify ${{ github.event.inputs.force == 'true' && '--force' || '' }}
+
+      - name: 推播紀錄存回 data 分支
+        run: |
+          tmp=$(mktemp -d)
+          cp data/twstock.db "$tmp/"
+          cd "$tmp"
+          git init -q -b data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add twstock.db
+          git commit -q -m "notify: $(date +%F_%H%M)"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data

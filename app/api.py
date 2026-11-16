@@ -66,6 +66,12 @@ def stock(code: str, days: int = Query(30, le=250), s: Session = Depends(db)) ->
     return detail
 
 
+@app.get("/api/backtest")
+def backtest(s: Session = Depends(db)) -> dict:
+    """清單出現後 1 / 5 / 20 個交易日的報酬統計與明細。"""
+    return services.get_backtest(s)
+
+
 def _run_job(d: date, use_llm: bool | None) -> None:
     s = get_session()
     try:

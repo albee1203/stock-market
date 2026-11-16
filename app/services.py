@@ -86,3 +86,10 @@ def get_stock_detail(session: Session, code: str, days: int = 30) -> dict | None
             "close": p.close if p else None,
         })
     return {"code": st.code, "name": st.name, "market": st.market, "history": history}
+
+
+def get_backtest(session: Session, limit_details: int = 300) -> dict:
+    from .backtest import compute_backtest
+    bt = compute_backtest(session)
+    bt["details"] = bt["details"][:limit_details]
+    return bt

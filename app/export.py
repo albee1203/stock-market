@@ -5,6 +5,7 @@
   data/days/<date>.json      當日觀察清單、外資排行、新聞
   data/stocks.json           [[code, name, market], ...]（搜尋用）
   data/history/<code>.json   個股近 60 日外資買賣超與收盤價
+  data/backtest.json         回測統計與最近 300 筆明細
 並把 web/ 的 App 外殼複製進來，整個目錄就是可部署的網站。
 """
 from __future__ import annotations
@@ -79,6 +80,7 @@ def export_site(session: Session, out: Path, days: int = 20) -> dict:
         _dump(data / "days" / f"{d.isoformat()}.json", export_day(session, d))
     _dump(data / "stocks.json", [[s.code, s.name, s.market] for s in session.scalars(select(Stock).order_by(Stock.code))])
     n_hist = export_history(session, data / "history")
+    _dump(data / "backtest.json", services.get_backtest(session))
     index = {
         "updated_at": datetime.now(TZ).isoformat(timespec="minutes"),
         "latest": dates[0].isoformat() if dates else None,

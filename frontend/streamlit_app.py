@@ -34,6 +34,8 @@ def load(kind: str, d: str, **kw):
             return services.get_news(s, dd, kw.get("code"))
         if kind == "stock":
             return services.get_stock_detail(s, kw["code"], 30)
+        if kind == "backtest":
+            return services.get_backtest(s)
     finally:
         s.close()
 
@@ -63,7 +65,7 @@ st.title("📊 台股每日觀察清單")
 st.caption(f"資料日期 {sel}｜外資籌碼 × 新聞情緒 綜合評分")
 
 rec = load("rec", sel)
-tab1, tab2, tab3, tab4 = st.tabs(["⭐ 觀察清單", "🏦 外資排行", "📰 新聞情緒", "🔍 個股"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["⭐ 觀察清單", "🏦 外資排行", "📰 新聞情緒", "🔍 個股", "🔁 回測"])
 
 
 def rec_table(rows: list[dict]) -> pd.DataFrame:
@@ -143,3 +145,30 @@ with tab4:
         st.markdown("相關新聞")
         for a in load("news", sel, code=code):
             st.markdown(f"- [{a['title']}]({a['url']})（{a['sentiment']:+.2f}）")
+
+with tab5:
+    bt = load("backtest", sel)
+    if not bt["list_days"]:
+        st.info("尚無回測資料：清單累積幾天後才會有結果，或執行 `python -m app.cli replay --days 60` 用歷史資料補算。")
+    else:
+        st.caption(f"統計 {bt['list_days']} 份清單（{bt['period'][0]} ～ {bt['period'][1]}）｜{bt['method']}")
+        for side, label, win in (("buy", "📈 建議買入", "勝率"), ("sell", "📉 建議賣出／避開", "避開成功率")):
+            st.subheader(label)
+            cols = st.columns(len(bt["horizons"]))
+            for col, h in zip(cols, bt["horizons"]):
+                m = bt["summary"][side][str(h)]
+                if m["n"]:
+                    col.metric(f"{h} 日後平均報酬", f"{m['avg'] * 100:+.2f}%",
+                               f"超額 {m['avg_excess'] * 100:+.2f}%" if m["avg_excess"] is not None else None,
+                               delta_color="off")
+                    col.caption(f"{win} {m['win_rate']:.0%}｜中位數 {m['median'] * 100:+.2f}%｜{m['n']} 筆")
+                else:
+                    col.metric(f"{h} 日後平均報酬", "—")
+        df = pd.DataFrame(bt["details"])
+        df = df[df["r1"].notna()]
+        for h in bt["horizons"]:
+            df[f"{h}日"] = (df[f"r{h}"] * 100).round(2)
+        df["方向"] = df["side"].map({"buy": "買入", "sell": "賣出"})
+        st.dataframe(df.rename(columns={"date": "日期", "code": "代號", "name": "名稱", "rank": "名次", "entry": "清單日收盤"})
+                     [["日期", "方向", "名次", "代號", "名稱", "清單日收盤"] + [f"{h}日" for h in bt["horizons"]]],
+                     hide_index=True, width="stretch")

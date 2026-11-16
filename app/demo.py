@@ -1,6 +1,7 @@
-"""離線示範資料：不需網路即可看到完整畫面。數字為虛構，僅供測試介面與評分邏輯。"""
+"""離線示範資料：不需網路即可看到完整畫面（含回測）。所有數字皆為虛構，僅供測試介面與評分邏輯。"""
 from __future__ import annotations
 
+import random
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import delete
@@ -43,6 +44,9 @@ NEWS = [
 ]
 
 
+DEMO_DAYS = 30
+
+
 def last_weekdays(end: date, n: int) -> list[date]:
     out, cur = [], end
     while len(out) < n:
@@ -52,23 +56,40 @@ def last_weekdays(end: date, n: int) -> list[date]:
     return list(reversed(out))
 
 
+def _demo_series(rng: random.Random, lots: list[int], close: float, n: int) -> tuple[list[int], list[float]]:
+    """產生 n 日虛構外資買賣超（最後 6 日用 STOCKS 中設定的值）與收盤價。"""
+    trend = 1 if sum(lots) > 0 else -1
+    head = [int(abs(lots[0]) * rng.uniform(0.3, 1.2)) * (trend if rng.random() < 0.6 else -trend)
+            for _ in range(n - len(lots))]
+    flows = head + lots
+    prices, p = [], close
+    for f in flows:  # 外資方向帶一點漂移，讓示範回測有東西可看
+        p *= 1 + (0.004 if f > 0 else -0.004) + rng.gauss(0, 0.012)
+        prices.append(round(p, 2))
+    return flows, prices
+
+
 def seed_demo(session: Session, end: date) -> date:
-    days = last_weekdays(end, 6)
+    days = last_weekdays(end, DEMO_DAYS)
     for model in (ForeignFlow, DailyPrice, Recommendation):
         session.execute(delete(model).where(model.date.in_(days)))
     session.execute(delete(NewsArticle).where(NewsArticle.source == "示範資料"))
     session.commit()
 
+    rng = random.Random(42)
+    series = {code: _demo_series(rng, lots, close, len(days)) for code, _, _, close, _, lots in STOCKS}
     for i, d in enumerate(days):
-        flows = [FlowRow(code, name, mkt, 0, 0, lots[i] * 1000) for code, name, mkt, _, _, lots in STOCKS]
-        save_flows(session, d, flows)
-        save_prices(session, d, [PriceRow(code, close, vol) for code, _, _, close, vol, _ in STOCKS])
+        save_flows(session, d, [FlowRow(code, name, mkt, 0, 0, series[code][0][i] * 1000)
+                                for code, name, mkt, *_ in STOCKS])
+        save_prices(session, d, [PriceRow(code, series[code][1][i], vol) for code, _, _, _, vol, _ in STOCKS])
 
-    d = days[-1]
-    base = datetime(d.year, d.month, d.day, 8, 0)
-    arts = [RawArticle("示範資料", f"https://example.com/demo/{d:%Y%m%d}/{i}", t, s, base + timedelta(minutes=17 * i))
-            for i, (t, s) in enumerate(NEWS)]
-    saved = save_articles(session, arts)
-    analyze_articles(session, saved, use_llm=False, reanalyze=True)
-    build_recommendations(session, d)
-    return d
+    # 每天都放同一組示範新聞（網址不同），從第 6 天起每天產生清單
+    for i, d in enumerate(days):
+        base = datetime(d.year, d.month, d.day, 8, 0)
+        arts = [RawArticle("示範資料", f"https://example.com/demo/{d:%Y%m%d}/{k}", t, s,
+                           base + timedelta(minutes=17 * k)) for k, (t, s) in enumerate(NEWS)]
+        saved = save_articles(session, arts)
+        analyze_articles(session, saved, use_llm=False, reanalyze=True)
+        if i >= 5:
+            build_recommendations(session, d)
+    return days[-1]

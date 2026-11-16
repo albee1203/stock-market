@@ -1,5 +1,5 @@
 /* Service worker：App 外殼離線可用；資料採「網路優先、失敗用快取」，離線時顯示上次資料。 */
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const SHELL_FILES = ["./", "index.html", "style.css", "app.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png"];

@@ -1,4 +1,4 @@
-# 每個交易日自動更新資料並發佈手機 App（GitHub Pages）。
+# 每個交易日收盤後自動更新資料並發佈手機 App（GitHub Pages）。推播由 morning-notify.yml 在隔天早上發送。
 # 第一次使用：Settings → Pages → Build and deployment → Source 選「GitHub Actions」。
 name: Daily update
 
@@ -17,6 +17,10 @@ on:
         description: "回補幾個交易日（第一次建議 10）"
         required: false
         default: "6"
+      replay_days:
+        description: "用歷史資料重新產生過去幾個交易日的清單（回測用；0＝不重播，建議 60，約需 30~60 分鐘）"
+        required: false
+        default: "0"
 
 permissions:
   contents: write   # 把資料庫存到 data 分支
@@ -30,7 +34,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     env:
       TZ: Asia/Taipei
       DATABASE_URL: sqlite:///data/twstock.db
@@ -56,6 +60,10 @@ jobs:
 
       - name: 回補歷史資料
         run: python -m app.cli backfill --days "${{ github.event.inputs.backfill_days || '6' }}" ${{ github.event.inputs.date && format('--date {0}', github.event.inputs.date) || '' }}
+
+      - name: 重播歷史清單（手動執行且 replay_days > 0 時）
+        if: ${{ github.event.inputs.replay_days && github.event.inputs.replay_days != '0' }}
+        run: python -m app.cli replay --days "${{ github.event.inputs.replay_days }}"
 
       - name: 抓取並分析今日資料
         run: python -m app.cli run ${{ github.event.inputs.date && format('--date {0}', github.event.inputs.date) || '' }}

@@ -3,7 +3,7 @@
 
 const $ = (s, el = document) => el.querySelector(s);
 const view = $("#view");
-const state = { index: null, date: null, day: null, stocks: null, listSide: "buy", foreignSide: "buy", newsFilter: "all" };
+const state = { backtest: null, btSide: "buy", index: null, date: null, day: null, stocks: null, listSide: "buy", foreignSide: "buy", newsFilter: "all" };
 const cache = new Map();
 
 function esc(v) {
@@ -181,6 +181,39 @@ async function renderStock(code) {
     ${disclaimer()}`;
 }
 
+const pct = x => (x == null ? "—" : `${x > 0 ? "+" : ""}${(x * 100).toFixed(1)}%`);
+const pctCls = x => (x == null ? "" : x > 0 ? "up-t" : x < 0 ? "down-t" : "");
+
+async function renderBacktest() {
+  if (!state.backtest) state.backtest = await getJSON("data/backtest.json");
+  const bt = state.backtest, side = state.btSide;
+  if (!bt.list_days) return empty("還沒有回測資料。清單累積幾天後就會出現；也可以在電腦執行 <code>python -m app.cli replay --days 60</code> 用歷史資料補算。");
+  const sum = bt.summary[side];
+  const winLabel = side === "buy" ? "勝率" : "避開成功率";
+  const tiles = bt.horizons.map(h => {
+    const m = sum[String(h)];
+    return `<div class="stat"><span class="muted">${h} 日後</span>
+      <b class="num ${pctCls(m.avg)}">${pct(m.avg)}</b>
+      <span class="muted num">${winLabel} ${m.win_rate == null ? "—" : Math.round(m.win_rate * 100) + "%"}</span><br>
+      <span class="muted num">超額 ${pct(m.avg_excess)}</span><br>
+      <span class="muted num">${m.n} 筆</span></div>`;
+  }).join("");
+  const mine = bt.details.filter(r => r.side === side);
+  const pending = mine.filter(r => r.r1 == null).length;
+  const rows = mine.filter(r => r.r1 != null).slice(0, 80).map(r => `
+    <a class="row" href="#/stock/${esc(r.code)}">
+      <span><span class="muted num" style="display:inline">${esc(r.date.slice(5))}</span> <b>${esc(r.name)}</b> <span class="code">${esc(r.code)}</span></span>
+      <span class="r num">${bt.horizons.map(h => `<span class="${pctCls(r["r" + h])}" style="display:inline-block;min-width:4.2em">${pct(r["r" + h])}</span>`).join("")}</span>
+    </a>`).join("");
+  return seg("btSide", side, [["buy", "建議買入", "up"], ["sell", "賣出／避開", "down"]])
+    + `<p class="muted">統計 ${bt.list_days} 份清單（${esc(bt.period[0])} ～ ${esc(bt.period[1])}）。${side === "sell" ? "賣出清單報酬越低代表避開越正確。" : ""}</p>`
+    + `<div class="stats">${tiles}</div>`
+    + `<h2>明細 <span class="muted" style="display:inline;float:right">${bt.horizons.map(h => `<span style="display:inline-block;min-width:4.2em;text-align:right">${h}日</span>`).join("")}</span></h2>`
+    + (pending ? `<p class="muted" style="margin-bottom:8px">另有 ${pending} 筆最新清單尚未滿 1 個交易日，明天起開始計算。</p>` : "")
+    + `<div class="rows">${rows || '<div class="empty">尚無已實現的報酬</div>'}</div>`
+    + `<p class="disclaimer">${esc(bt.method)}過去績效不代表未來表現。</p>`;
+}
+
 /* ---------- 路由 ---------- */
 
 async function render() {
@@ -189,6 +222,7 @@ async function render() {
   try {
     if (tab === "foreign") view.innerHTML = renderForeign();
     else if (tab === "news") view.innerHTML = renderNews();
+    else if (tab === "backtest") view.innerHTML = await renderBacktest();
     else if (tab === "stock") view.innerHTML = await renderStock(arg ? decodeURIComponent(arg) : "");
     else view.innerHTML = renderList();
   } catch (e) {
@@ -222,6 +256,7 @@ $("#date").addEventListener("change", async e => {
 
 $("#refresh").addEventListener("click", async () => {
   cache.clear();
+  state.backtest = null;
   await boot(true);
 });
 

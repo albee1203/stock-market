@@ -127,3 +127,13 @@ def upsert_stocks(session: Session, stocks: dict[str, tuple[str, str]]) -> None:
             existing[code].name, existing[code].market = name, market
         else:
             session.add(Stock(code=code, name=name, market=market))
+
+
+class NotificationLog(Base):
+    """記錄已發送的通知，避免同一份清單重複推播（排程一天會跑兩次）。"""
+    __tablename__ = "notification_logs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[dt.date] = mapped_column(Date, index=True)
+    channel: Mapped[str] = mapped_column(String(20))
+    digest: Mapped[str] = mapped_column(String(64))
+    sent_at: Mapped[dt.datetime] = mapped_column(DateTime)

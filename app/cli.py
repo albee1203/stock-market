@@ -6,6 +6,9 @@
   python -m app.cli demo                       # 載入離線示範資料
   python -m app.cli show [--date ...]          # 在終端機印出清單
   python -m app.cli export [--out site]        # 匯出手機 App 用的靜態網站
+  python -m app.cli notify [--dry-run]         # 推播最新一份清單（LINE / Telegram / ntfy）
+  python -m app.cli backtest                   # 印出回測結果
+  python -m app.cli replay --days 60           # 用歷史資料重新產生過去的清單（回測樣本）
 """
 from __future__ import annotations
 
@@ -58,6 +61,19 @@ def main(argv: list[str] | None = None) -> None:
         x = sub.add_parser(name)
         x.add_argument("--date", type=_date, default=None)
 
+    n = sub.add_parser("notify", help="推播最新一份清單")
+    n.add_argument("--date", type=_date, default=None, help="預設＝資料庫中最新交易日")
+    n.add_argument("--force", action="store_true", help="已推播過也再送一次")
+    n.add_argument("--dry-run", action="store_true", help="只印出訊息，不發送")
+    n.add_argument("--max-age-days", type=int, default=5, help="清單超過幾天就不推播（避免資料中斷時推舊清單）")
+
+    sub.add_parser("backtest", help="印出回測結果")
+
+    rp = sub.add_parser("replay", help="用歷史資料重新產生過去的清單")
+    rp.add_argument("--days", type=int, default=60)
+    rp.add_argument("--date", type=_date, default=None, help="重播到哪一天（預設今天）")
+    rp.add_argument("--llm", action="store_true", help="用 Claude 分析歷史新聞（請求數多，注意費用）")
+
     e = sub.add_parser("export", help="匯出手機 App（PWA）用的靜態網站")
     e.add_argument("--out", default="site")
     e.add_argument("--days", type=int, default=20, help="保留最近幾個交易日")
@@ -91,6 +107,34 @@ def main(argv: list[str] | None = None) -> None:
                 print("資料庫尚無資料")
                 return
             _print_lists(services.get_recommendations(s, d))
+        elif args.cmd == "notify":
+            from .notify import notify
+            d = args.date or latest_trading_date(s)
+            if d is None:
+                print("資料庫尚無資料，不推播")
+            elif (today - d).days > args.max_age_days and not args.force:
+                print(f"最新清單是 {d}，已超過 {args.max_age_days} 天，不推播（資料可能中斷，請檢查每日排程）")
+            else:
+                res = notify(s, d, force=args.force, dry_run=args.dry_run)
+                print(res["text"] if args.dry_run else json.dumps(res, ensure_ascii=False))
+        elif args.cmd == "backtest":
+            from .backtest import compute_backtest, fmt_pct
+            bt = compute_backtest(s)
+            print(f"清單天數 {bt['list_days']}，期間 {bt['period']}\n{bt['method']}")
+            for side, label in (("buy", "建議買入"), ("sell", "建議賣出")):
+                print(f"\n{label}")
+                for h in bt["horizons"]:
+                    m = bt["summary"][side][str(h)]
+                    if m["n"]:
+                        print(f"  {h:>2} 日後：平均 {fmt_pct(m['avg'])}｜中位數 {fmt_pct(m['median'])}｜"
+                              f"{'勝率' if side == 'buy' else '避開成功率'} {m['win_rate']:.0%}｜"
+                              f"超額 {fmt_pct(m['avg_excess'])}｜{m['n']} 筆")
+                    else:
+                        print(f"  {h:>2} 日後：尚無足夠資料")
+        elif args.cmd == "replay":
+            from .replay import replay
+            res = replay(s, args.date or today, args.days, use_llm=args.llm)
+            print(f"重播完成：{sum(1 for r in res if r['ok'])} 個交易日產生清單")
         elif args.cmd == "export":
             from .export import export_site
             print(json.dumps(export_site(s, args.out, args.days), ensure_ascii=False))
