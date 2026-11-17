@@ -155,3 +155,18 @@ def run_daily(session: Session, d: date, use_llm: bool | None = None, with_news:
 
 def latest_trading_date(session: Session) -> date | None:
     return session.scalar(select(func.max(ForeignFlow.date)))
+
+
+def update_recent_news(session: Session, use_llm: bool | None = None) -> dict:
+    """盤前更新：抓最新交易日收盤後到現在的新聞（含夜間、今晨），存檔並分析情緒。"""
+    from datetime import datetime
+
+    from .config import TZ
+    latest = latest_trading_date(session)
+    if latest is None:
+        return {"ok": False, "message": "資料庫尚無交易日"}
+    now = datetime.now(TZ).replace(tzinfo=None)
+    start = datetime(latest.year, latest.month, latest.day, 13, 0)
+    saved = save_articles(session, news.fetch_between(start, now))
+    analyzed = analyze_articles(session, saved, use_llm=use_llm)
+    return {"ok": True, "since": start.isoformat(timespec="minutes"), "news": len(saved), "analyzed": analyzed}

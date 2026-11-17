@@ -7,6 +7,7 @@
   python -m app.cli show [--date ...]          # 在終端機印出清單
   python -m app.cli export [--out site]        # 匯出手機 App 用的靜態網站
   python -m app.cli night                      # 抓台指期夜盤（盤前執行），納入最新清單的盤前指數
+  python -m app.cli news                       # 抓最新交易日收盤後到現在的新聞（盤前執行）
   python -m app.cli notify [--dry-run]         # 推播最新一份清單（LINE / Telegram / ntfy）
   python -m app.cli backtest                   # 印出回測結果
   python -m app.cli portfolio                  # 我的持股（讀 HOLDINGS 或 holdings.csv）
@@ -67,6 +68,7 @@ def main(argv: list[str] | None = None) -> None:
         x.add_argument("--date", type=_date, default=None)
 
     sub.add_parser("night", help="抓台指期夜盤（盤前執行）")
+    sub.add_parser("news", help="抓最新交易日收盤後到現在的新聞（盤前執行）")
 
     n = sub.add_parser("notify", help="推播最新一份清單")
     n.add_argument("--date", type=_date, default=None, help="預設＝資料庫中最新交易日")
@@ -132,6 +134,11 @@ def main(argv: list[str] | None = None) -> None:
             info = update_night(s, today)
             summary["result"] = info
             print(json.dumps(info, ensure_ascii=False) if info else "查無夜盤資料")
+        elif args.cmd == "news":
+            from .pipeline import update_recent_news
+            res = update_recent_news(s)
+            summary["result"] = res
+            print(json.dumps(res, ensure_ascii=False))
         elif args.cmd == "notify":
             from .notify import notify
             d = args.date or latest_trading_date(s)
@@ -181,7 +188,7 @@ def main(argv: list[str] | None = None) -> None:
             _print_lists(services.get_recommendations(s, d))
     finally:
         s.close()
-        if args.cmd in ("run", "backfill", "replay", "night", "notify"):
+        if args.cmd in ("run", "backfill", "replay", "night", "news", "notify"):
             _write_summary(args.cmd, summary, problems)
 
 

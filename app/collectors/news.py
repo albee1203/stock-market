@@ -116,6 +116,11 @@ def news_window(trading_day: datetime | Any) -> tuple[datetime, datetime]:
 
 def fetch_all(trading_day) -> list[RawArticle]:
     start, end = news_window(trading_day)
+    return fetch_between(start, end)
+
+
+def fetch_between(start: datetime, end: datetime) -> list[RawArticle]:
+    """抓 start～end（台北時間，naive）之間的新聞：鉅亨網依時間查詢，RSS 只有最新幾十則。"""
     articles: list[RawArticle] = []
     try:
         articles += fetch_cnyes(start, end)

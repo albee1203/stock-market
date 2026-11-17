@@ -4,8 +4,10 @@ name: Morning notify
 
 on:
   schedule:
-    # 台北時間週一至週五 08:40（UTC 00:40）。GitHub 排程常延遲 5~30 分鐘，
-    # 提早排程以確保 9:00 開盤前收到；想準 9:00 發送可改成 "0 1 * * 1-5"。
+    # GitHub 排程常延遲數十分鐘甚至被略過，所以排三次（重複執行無害：夜盤、新聞不重複，推播每天只送一次）
+    # 台北時間週一至週五 07:20、08:00、08:40（UTC 前一天 23:20、當天 00:00、00:40）
+    - cron: "20 23 * * 0-4"
+    - cron: "0 0 * * 1-5"
     - cron: "40 0 * * 1-5"
   workflow_dispatch:
     inputs:
@@ -30,6 +32,7 @@ jobs:
     env:
       TZ: Asia/Taipei
       DATABASE_URL: sqlite:///data/twstock.db
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # 選用；未設定則用詞典分析新聞
       APP_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
       LINE_TO: ${{ secrets.LINE_TO }}
@@ -57,7 +60,10 @@ jobs:
       - name: 抓台指期夜盤
         run: python -m app.cli night
 
-      - name: 更新 App（加入夜盤與盤前指數）
+      - name: 抓夜間與今晨新聞
+        run: python -m app.cli news
+
+      - name: 更新 App（加入夜盤、盤前指數與最新新聞）
         run: python -m app.cli export --out site --days 20
 
       - name: 推播最新清單

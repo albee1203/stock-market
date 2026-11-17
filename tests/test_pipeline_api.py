@@ -49,3 +49,24 @@ def test_backfill_refetches_days_missing_a_market(session, monkeypatch):
     monkeypatch.setattr(pipeline.prices, "fetch_all", lambda d: [])
     pipeline.ensure_flow_history(session, D, days=1, max_lookback=3)
     assert fetched == [d0]  # 11/12 缺上市 → 重新抓
+
+
+def test_update_recent_news_and_latest_day_includes_now(session, monkeypatch):
+    from datetime import datetime, timedelta
+
+    from app import pipeline, services
+    from app.collectors.news import RawArticle
+    from app.config import TZ
+    seed_demo(session, D)
+    now = datetime.now(TZ).replace(tzinfo=None)
+    captured = {}
+
+    def fake(start, end):
+        captured["range"] = (start, end)
+        return [RawArticle("鉅亨網", "https://example.com/overnight", "台積電夜間利多 調升目標價", "", now - timedelta(minutes=5))]
+    monkeypatch.setattr(pipeline.news, "fetch_between", fake)
+    res = pipeline.update_recent_news(session, use_llm=False)
+    assert res["ok"] and res["news"] == 1 and res["analyzed"] == 1
+    assert captured["range"][0] == datetime(2026, 11, 13, 13, 0)
+    titles = [a["title"] for a in services.get_news(session, D)]
+    assert "台積電夜間利多 調升目標價" in titles  # 最新交易日的新聞包含收盤後到現在

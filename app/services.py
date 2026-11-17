@@ -71,6 +71,14 @@ def _article_dict(a: NewsArticle, names: dict[str, str]) -> dict:
 
 def get_news(session: Session, d: date, code: str | None = None) -> list[dict]:
     start, end = news_window(d)
+    # 最新一個交易日：把收盤後到現在的新聞（夜間、今晨）也一起顯示
+    from datetime import datetime
+
+    from sqlalchemy import func as _f
+
+    from .config import TZ
+    if d == session.scalar(select(_f.max(ForeignFlow.date))):
+        end = max(end, datetime.now(TZ).replace(tzinfo=None))
     names = {s.code: s.name for s in session.scalars(select(Stock))}
     arts = session.scalars(
         select(NewsArticle).where(NewsArticle.published_at.between(start, end))
