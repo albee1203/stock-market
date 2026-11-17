@@ -146,6 +146,9 @@ function nightBlock(n) {
   </div>`;
 }
 
+// Yahoo 股市即時報價頁：上市 .TW、上櫃 .TWO
+const quoteUrl = (code, market) => `https://tw.stock.yahoo.com/quote/${encodeURIComponent(code)}.${market === "TPEX" ? "TWO" : "TW"}`;
+
 /* ---------- 共用元件 ---------- */
 
 function meter(label, v) {
@@ -280,6 +283,9 @@ async function renderStock(code) {
   }
   const sum5 = hist.slice(-5).reduce((a, h) => a + h[1], 0);
   const lastPx = lastClose(histObj);
+  const priced = hist.filter(h => h[2] != null);
+  const lastDate = priced.at(-1)?.[0];
+  const dayChg = priced.length > 1 ? priced.at(-1)[2] / priced.at(-2)[2] - 1 : null;
   const idx = state.day?.scores?.[code];
   const mine = state.holdings[code];
   let mineHtml = "";
@@ -302,6 +308,12 @@ async function renderStock(code) {
     </div>`;
   return search + `
     <h2 style="font-size:20px">${esc(info?.[1] || code)} <span class="code">${esc(code)}・${info?.[2] === "TPEX" ? "上櫃" : "上市"}</span></h2>
+    <div class="card quote">
+      <div><span class="muted">最新收盤（${esc(lastDate ? lastDate.slice(5) : "—")}）</span>
+        <b class="num big-price ${pctCls(dayChg)}">${fmtP(lastPx)}</b>
+        <span class="num ${pctCls(dayChg)}">${dayChg == null ? "" : pct(dayChg)}</span></div>
+      <a class="btn" href="${quoteUrl(code, info?.[2])}" target="_blank" rel="noopener">📈 看即時股價</a>
+    </div>
     ${rec ? `<div class="card" style="border-color:var(--${rec[0] === "buy" ? "up" : "down"})"><b class="${rec[0] === "buy" ? "up" : "down"}-t">今日列入${rec[0] === "buy" ? "建議買入" : "建議賣出／避開"} 第 ${rec[1].rank} 名・推薦指數 ${rec[1].index}</b><p class="reason">${esc(rec[1].reason)}</p></div>` : ""}
     ${idx != null ? `<div class="card idx-card">${badge(idx)}<span class="muted">推薦指數（0～100，50 為中性）綜合當日外資籌碼與新聞情緒</span></div>` : ""}
     <div class="stats">
@@ -472,10 +484,11 @@ async function renderPortfolio() {
     return `<div class="card holding" data-code="${esc(it.code)}">
       <div class="card-head">
         <a href="#/stock/${esc(it.code)}" class="name" style="text-decoration:none">${esc(it.name)}</a><span class="code">${esc(it.code)}</span>
+        <a class="mini" href="${quoteUrl(it.code, state.stocks.find(x => x[0] === it.code)?.[2])}" target="_blank" rel="noopener" style="text-decoration:none">即時 ↗</a>
         ${badge(it.index)}
       </div>
       <div class="hgrid num">
-        <span class="muted">現價</span><b>${fmtP(it.price)}</b>
+        <span class="muted">收盤</span><b>${fmtP(it.price)}</b>
         <span class="muted">今日</span><b class="${pctCls(it.day)}">${pct(it.day)}</b>
         <span class="muted">成本</span><b>${fmtP(it.cost)}</b>
         <span class="muted">報酬</span><b class="${pctCls(it.ret)}">${pct(it.ret)}</b>

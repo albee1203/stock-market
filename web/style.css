@@ -159,3 +159,8 @@ textarea { width: 100%; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, mono
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
 .tabbar a { font-size: 11px; }
 .hold-form input[type="date"] { width: 140px; }
+
+.quote { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.quote > div { display: flex; flex-direction: column; }
+.big-price { font-size: 26px; line-height: 1.2; }
+.quote .btn { display: inline-flex; align-items: center; text-decoration: none; }
