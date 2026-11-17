@@ -40,7 +40,8 @@ TWSE/TPEx ─┤ foreign.py  外資及陸資買賣超（上市 TWT38U＋上櫃�
 | `app/api.py` | REST API |
 | `frontend/streamlit_app.py` | 電腦版分析介面（Streamlit） |
 | `app/export.py` | 匯出手機 App 用的靜態 JSON |
-| `web/` | 手機 App（PWA，純 HTML/JS，不需建置） |
+| `web/` | 手機 App（PWA，純 HTML/JS，不需建置）；`web/config.json` 設定即時報價轉接站 |
+| `worker/` | 即時股價轉接站（Cloudflare Worker） |
 | `.github/workflows/daily.yml` | 收盤後自動更新＋發佈 App |
 | `.github/workflows/morning-notify.yml` | 隔天早上推播清單 |
 | `app/backtest.py`、`app/replay.py` | 回測、用歷史資料重播清單 |
@@ -181,6 +182,12 @@ Windows 可用「工作排程器」執行同樣的指令；`site/` 可放到任�
 > 持股請存在 **Secret**，不要提交成檔案：GitHub Pages 與公開 repo 任何人都看得到。本機可放在已加入 `.gitignore` 的 `holdings.csv`。
 
 回測頁會多一欄「照停損停利出場」的實現報酬，可以和單純持有 N 日比較，判斷停損停利參數是否合適。
+
+## ⚡ 即時股價（選用）
+
+部署免費的 Cloudflare Worker 轉接站後，App 的個股頁、持股頁、清單頁會顯示盤中即時價（證交所報價約 5 秒延遲），盤中每 15 秒自動更新，持股損益與停損停利也改用即時價判斷。
+
+部署步驟見 [`worker/README.md`](worker/README.md)，完成後把網址填進 `web/config.json` 的 `quote_proxy`。未設定或轉接站連不上時，App 會改顯示最新收盤價與「看即時股價」連結（Yahoo 股市）。
 
 ## 💼 個人持股追蹤
 

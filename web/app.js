@@ -88,10 +88,11 @@ async function alertsBlock() {
       <span>${ALERT_ICON[a.kind] || "•"} <b>${esc(a.name)}</b> <span class="code">${esc(a.code)}</span> ${esc(a.text)}</span>
       <span class="muted num">收盤 ${fmtP(a.exit_price ?? a.last_close)}・${esc(a.open_date.slice(5))} 入清單起 <span class="${pctCls(a.ret)}">${pct(a.ret)}</span>・停損 ${fmtP(a.stop)}／停利 ${fmtP(a.take)}</span>
     </a>`);
+  const liveH = await fetchQuotes(Object.keys(state.holdings));
   for (const [code, h] of Object.entries(state.holdings)) {
     let hist;
     try { hist = await getHistory(code); } catch { continue; }
-    const price = lastClose(hist);
+    const price = liveH[code]?.price ?? lastClose(hist);
     if (price == null) continue;
     const lv = calcLevels(h.cost, hist.levels?.sigma ?? null, h.stopPct, h.takePct);
     const [kind, text] = holdingStatus(price, lv);
@@ -100,7 +101,7 @@ async function alertsBlock() {
     items.push(`
       <a class="alert ${kind.includes("stop") ? "down" : kind.includes("take") ? "up" : "ok"}" href="#/stock/${esc(code)}">
         <span>${ALERT_ICON[kind] || "💼"} 持股 <b>${esc(name)}</b> <span class="code">${esc(code)}</span> ${esc(text)}</span>
-        <span class="muted num">收盤 ${fmtP(price)}・成本 ${fmtP(h.cost)} <span class="${pctCls(ret)}">${pct(ret)}</span>・停損 ${fmtP(lv.stop)}／停利 ${fmtP(lv.take)}</span>
+        <span class="muted num">${liveH[code] ? "即時" : "收盤"} ${fmtP(price)}・成本 ${fmtP(h.cost)} <span class="${pctCls(ret)}">${pct(ret)}</span>・停損 ${fmtP(lv.stop)}／停利 ${fmtP(lv.take)}</span>
       </a>`);
   }
   // 夜盤跳空預警：清單追蹤（後端算好）＋本機持股（依夜盤漲跌估算開盤價）
@@ -146,6 +147,66 @@ function nightBlock(n) {
   </div>`;
 }
 
+/* ---------- 即時股價（透過 Cloudflare 轉接站，見 worker/） ---------- */
+
+const liveCache = new Map(); // code -> { at, q }
+const LIVE_TTL = 10_000;
+
+function taipeiNow() {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short",
+  }).formatToParts(new Date()).map(p => [p.type, p.value]));
+  return { date: `${parts.year}${parts.month}${parts.day}`, hm: +parts.hour * 60 + +parts.minute, weekday: parts.weekday };
+}
+function isMarketOpen() {
+  const t = taipeiNow();
+  return !["Sat", "Sun"].includes(t.weekday) && t.hm >= 8 * 60 + 55 && t.hm <= 13 * 60 + 35;
+}
+const liveEnabled = () => !!state.config?.quote_proxy;
+
+async function fetchQuotes(codes) {
+  if (!liveEnabled() || !codes.length) return {};
+  const now = Date.now(), out = {}, need = [];
+  for (const c of new Set(codes)) {
+    const hit = liveCache.get(c);
+    if (hit && now - hit.at < LIVE_TTL) { if (hit.q) out[c] = hit.q; } else need.push(c);
+  }
+  if (!state.stocks) state.stocks = await getJSON("data/stocks.json").catch(() => []);
+  for (let i = 0; i < need.length; i += 50) {
+    const chunk = need.slice(i, i + 50);
+    const q = chunk.map(c => `${state.stocks.find(s => s[0] === c)?.[2] === "TPEX" ? "otc" : "tse"}_${c}`).join(",");
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch(`${state.config.quote_proxy.replace(/\/$/, "")}/?q=${encodeURIComponent(q)}`, { signal: ctrl.signal, cache: "no-store" });
+      clearTimeout(timer);
+      const data = res.ok ? await res.json() : {};
+      for (const c of chunk) {
+        const qt = data.quotes?.[c];
+        liveCache.set(c, { at: now, q: qt?.price ? qt : null });
+        if (qt?.price) out[c] = qt;
+      }
+      state.liveError = res.ok ? null : `即時報價暫時無法取得（${res.status}）`;
+    } catch {
+      state.liveError = "即時報價暫時無法取得";
+    }
+  }
+  return out;
+}
+
+function liveLabel(q) {
+  if (!q) return "";
+  const today = taipeiNow().date;
+  const t = (q.time || "").slice(0, 5);
+  if (q.date === today && isMarketOpen()) return `即時 ${t}`;
+  return q.date ? `最後成交 ${q.date.slice(4, 6)}/${q.date.slice(6)} ${t}` : "最後成交";
+}
+
+function liveChip(q) {
+  if (!q) return "";
+  return `<span class="live-chip num ${pctCls(q.change_pct)}" title="${esc(liveLabel(q))}">${fmtP(q.price)} ${pct(q.change_pct)}</span>`;
+}
+
 // Yahoo 股市即時報價頁：上市 .TW、上櫃 .TWO
 const quoteUrl = (code, market) => `https://tw.stock.yahoo.com/quote/${encodeURIComponent(code)}.${market === "TPEX" ? "TWO" : "TW"}`;
 
@@ -171,6 +232,7 @@ const disclaimer = () => `<p class="disclaimer">${esc(state.index?.disclaimer ||
 async function renderList() {
   if (!state.stocks) state.stocks = await getJSON("data/stocks.json").catch(() => []);
   const d = state.day;
+  const live = d && state.date === state.index?.latest ? await fetchQuotes([...d.buy, ...d.sell].map(r => r.code)) : {};
   if (!d) return empty("還沒有資料。請等待每日自動更新，或在電腦上執行 <code>python -m app.cli run</code>。");
   const side = state.listSide;
   const rows = d[side];
@@ -179,6 +241,7 @@ async function renderList() {
       <div class="card-head">
         <span class="rank num">${r.rank}</span>
         <span class="name">${esc(r.name)}</span><span class="code">${esc(r.code)}</span>
+        ${liveChip(live[r.code])}
         ${r.pre_index != null ? `<span class="badge-wrap">${badge(r.pre_index)}<small class="muted">盤前・昨收 ${r.index}</small></span>` : badge(r.index)}
       </div>
       <div class="meters">${meter("外資", r.foreign_score)}${meter("新聞", r.news_score)}</div>
@@ -286,13 +349,15 @@ async function renderStock(code) {
   const priced = hist.filter(h => h[2] != null);
   const lastDate = priced.at(-1)?.[0];
   const dayChg = priced.length > 1 ? priced.at(-1)[2] / priced.at(-2)[2] - 1 : null;
+  const lq = (await fetchQuotes([code]))[code];
   const idx = state.day?.scores?.[code];
   const mine = state.holdings[code];
   let mineHtml = "";
-  if (mine && lastPx != null) {
+  const nowPx = lq?.price ?? lastPx;
+  if (mine && nowPx != null) {
     const lv = calcLevels(mine.cost, histObj.levels?.sigma ?? null, mine.stopPct, mine.takePct);
-    const [kind, text] = holdingStatus(lastPx, lv);
-    const ret = lastPx / mine.cost - 1;
+    const [kind, text] = holdingStatus(nowPx, lv);
+    const ret = nowPx / mine.cost - 1;
     mineHtml = `<p class="${kind.includes("stop") ? "down-t" : kind.includes("take") ? "up-t" : ""}"><b>${ALERT_ICON[kind] || "💼"} ${esc(text)}</b>：成本 ${fmtP(mine.cost)}，目前 <span class="${pctCls(ret)}">${pct(ret)}</span></p>${levelsLine(lv, "我的")}`;
   }
   const holdForm = `<div class="card">
@@ -309,10 +374,14 @@ async function renderStock(code) {
   return search + `
     <h2 style="font-size:20px">${esc(info?.[1] || code)} <span class="code">${esc(code)}・${info?.[2] === "TPEX" ? "上櫃" : "上市"}</span></h2>
     <div class="card quote">
-      <div><span class="muted">最新收盤（${esc(lastDate ? lastDate.slice(5) : "—")}）</span>
+      ${lq ? `<div><span class="muted">${esc(liveLabel(lq))}${isMarketOpen() ? "・每 15 秒更新" : ""}</span>
+        <b class="num big-price ${pctCls(lq.change_pct)}">${fmtP(lq.price)}</b>
+        <span class="num ${pctCls(lq.change_pct)}">${lq.change == null ? "" : `${lq.change > 0 ? "▲" : lq.change < 0 ? "▼" : ""}${fmtP(Math.abs(lq.change))}（${pct(lq.change_pct)}）`}</span>
+        <span class="muted num">開 ${fmtP(lq.open)}・高 ${fmtP(lq.high)}・低 ${fmtP(lq.low)}・量 ${fmtInt(lq.volume)} 張</span></div>`
+      : `<div><span class="muted">最新收盤（${esc(lastDate ? lastDate.slice(5) : "—")}）${state.liveError ? `・${esc(state.liveError)}` : ""}</span>
         <b class="num big-price ${pctCls(dayChg)}">${fmtP(lastPx)}</b>
-        <span class="num ${pctCls(dayChg)}">${dayChg == null ? "" : pct(dayChg)}</span></div>
-      <a class="btn" href="${quoteUrl(code, info?.[2])}" target="_blank" rel="noopener">📈 看即時股價</a>
+        <span class="num ${pctCls(dayChg)}">${dayChg == null ? "" : pct(dayChg)}</span></div>`}
+      <a class="btn ${lq ? "ghost" : ""}" href="${quoteUrl(code, info?.[2])}" target="_blank" rel="noopener">📈 ${lq ? "Yahoo 股市" : "看即時股價"}</a>
     </div>
     ${rec ? `<div class="card" style="border-color:var(--${rec[0] === "buy" ? "up" : "down"})"><b class="${rec[0] === "buy" ? "up" : "down"}-t">今日列入${rec[0] === "buy" ? "建議買入" : "建議賣出／避開"} 第 ${rec[1].rank} 名・推薦指數 ${rec[1].index}</b><p class="reason">${esc(rec[1].reason)}</p></div>` : ""}
     ${idx != null ? `<div class="card idx-card">${badge(idx)}<span class="muted">推薦指數（0～100，50 為中性）綜合當日外資籌碼與新聞情緒</span></div>` : ""}
@@ -441,14 +510,18 @@ const STATUS_RANK = { stop: 0, near_stop: 1, take: 2, near_take: 3, ok: 5 };
 async function renderPortfolio() {
   if (!state.stocks) state.stocks = await getJSON("data/stocks.json").catch(() => []);
   const entries = Object.entries(state.holdings);
+  const live = await fetchQuotes(entries.map(([c]) => c));
   const items = [];
   for (const [code, h] of entries) {
     let hist = { h: [], levels: null };
     try { hist = await getHistory(code); } catch { /* 無資料 */ }
     const closes = hist.h.filter(x => x[2] != null);
-    const price = closes.at(-1)?.[2] ?? null, prev = closes.at(-2)?.[2] ?? null;
+    const lq = live[code];
+    // 有即時價就用即時價與昨收；否則用最新收盤與前一日收盤
+    const price = lq?.price ?? closes.at(-1)?.[2] ?? null;
+    const prev = lq ? (lq.prev ?? closes.at(-1)?.[2] ?? null) : (closes.at(-2)?.[2] ?? null);
     const name = state.stocks.find(x => x[0] === code)?.[1] || code;
-    const it = { code, name, ...h, price, prev };
+    const it = { code, name, ...h, price, prev, live: !!lq, liveText: lq ? liveLabel(lq) : "" };
     if (price != null) {
       it.lv = calcLevels(h.cost, hist.levels?.sigma ?? null, h.stopPct, h.takePct);
       [it.kind, it.text] = holdingStatus(price, it.lv);
@@ -477,6 +550,7 @@ async function renderPortfolio() {
         <div class="stat"><span class="muted">今日損益</span><b class="num ${pctCls(dayPnl)}">${fmtMoney(dayPnl)}</b></div>
       </div>
       ${priced.length < items.length ? `<p class="muted" style="margin:8px 0 0">總計只含有填股數的 ${priced.length}/${items.length} 檔。</p>` : ""}
+      <p class="muted" style="margin:6px 0 0">${Object.keys(live).length ? `以即時價計算（${esc(liveLabel(Object.values(live)[0]))}）${isMarketOpen() ? "，每 15 秒更新" : ""}` : `以最新收盤價計算${state.liveError ? `（${esc(state.liveError)}）` : ""}`}</p>
     </div>` : "";
 
   const cards = items.map(it => {
@@ -488,7 +562,7 @@ async function renderPortfolio() {
         ${badge(it.index)}
       </div>
       <div class="hgrid num">
-        <span class="muted">收盤</span><b>${fmtP(it.price)}</b>
+        <span class="muted">${it.live ? "即時" : "收盤"}</span><b>${fmtP(it.price)}</b>
         <span class="muted">今日</span><b class="${pctCls(it.day)}">${pct(it.day)}</b>
         <span class="muted">成本</span><b>${fmtP(it.cost)}</b>
         <span class="muted">報酬</span><b class="${pctCls(it.ret)}">${pct(it.ret)}</b>
@@ -591,6 +665,19 @@ async function render() {
   }
 }
 
+// 盤中每 15 秒更新即時價：只在畫面可見、沒有在輸入或編輯時重畫，並保留捲動位置
+setInterval(async () => {
+  if (!liveEnabled() || !isMarketOpen() || document.hidden) return;
+  const tab = (location.hash || "#/list").split("/")[1] || "list";
+  if (!["list", "stock", "portfolio"].includes(tab)) return;
+  const a = document.activeElement;
+  if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+  if (state.editing || document.querySelector("details[open]")) return;
+  const y = window.scrollY;
+  await render();
+  window.scrollTo(0, y);
+}, 15_000);
+
 view.addEventListener("click", e => {
   const b = e.target.closest("button[data-seg]");
   if (!b) return;
@@ -667,6 +754,7 @@ window.addEventListener("offline", setOffline);
 
 async function boot(fresh = false) {
   setOffline();
+  if (!state.config) state.config = await getJSON("config.json", { fresh: true }).catch(() => ({}));
   try {
     await loadIndex(fresh);
     await loadDay(fresh);

@@ -164,3 +164,6 @@ textarea { width: 100%; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, mono
 .quote > div { display: flex; flex-direction: column; }
 .big-price { font-size: 26px; line-height: 1.2; }
 .quote .btn { display: inline-flex; align-items: center; text-decoration: none; }
+
+.live-chip { font-size: 13px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); white-space: nowrap; }
+.quote > div > .muted:last-child { margin-top: 2px; font-size: 12px; }

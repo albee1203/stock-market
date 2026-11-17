@@ -1,0 +1,4 @@
+# 用指令部署時使用（npx wrangler deploy）；用 Cloudflare 網頁貼上程式碼部署則不需要此檔
+name = "tw-quote"
+main = "quote-proxy.js"
+compatibility_date = "2025-01-01"
