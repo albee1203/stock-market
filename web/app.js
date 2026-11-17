@@ -276,7 +276,8 @@ function newsItem(a) {
   const t = tone(a.sentiment);
   return `<div class="news-item">
     <a class="t" href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener"><span class="dot ${t}"></span>${esc(a.title)}</a>
-    <p class="muted">${esc(a.source)}・${esc(a.published_at.slice(5).replace("T", " "))}・情緒 <span class="num ${t}-t">${sign(a.sentiment)}</span></p>
+    <p class="muted">${esc(a.source)}・${esc(a.published_at.slice(5).replace("T", " "))}・情緒 <span class="num ${t}-t">${sign(a.sentiment)}</span>${a.analyzer === "claude" ? ` <span class="chip ai">AI 分析</span>` : ""}</p>
+    ${a.stocks.filter(s => s.reason).map(s => `<p class="ai-reason"><b>${esc(s.name)}</b>：${esc(s.reason)}</p>`).join("")}
     <div class="chips">
       ${a.bullish_keywords.map(k => `<span class="chip up">${esc(k)}</span>`).join("")}
       ${a.bearish_keywords.map(k => `<span class="chip down">${esc(k)}</span>`).join("")}

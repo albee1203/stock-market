@@ -311,8 +311,17 @@ python -m app.cli backtest             # 印出統計
 
 在 `.env` 設定 `ANTHROPIC_API_KEY` 後，`run` 會自動改用 Claude（也可用 `--llm` / `--no-llm` 強制切換）。
 
-- 預設模型 `claude-opus-5-5`，effort 設為 `low`，適合這種分類工作。想降低成本，可在 `.env` 設 `ANTHROPIC_MODEL=claude-haiku-5-5`。
-- 每批 10 則新聞送一次請求；一天約 100 則新聞就是約 10 次請求。
+- GitHub Actions：在 **Settings → Secrets and variables → Actions → Secrets** 新增 `ANTHROPIC_API_KEY`。
+- 預設模型 `claude-opus-5-5`，effort 設為 `low`。可在 **Variables** 新增 `ANTHROPIC_MODEL` 改用其他模型（本機則設在 `.env`）。
+- 每批 10 則新聞送一次請求，只分析新出現的新聞。依 2026-11 實際新聞量（每天約 116 則、每則約 340 字）估算：
+
+  | 模型 | 每月約 |
+  |---|---|
+  | `claude-opus-5-5`（預設） | US$25 |
+  | `claude-sonnet-5-5` | US$12 |
+  | `claude-haiku-5-5` | US$0.6 |
+
+- 每次執行用了哪種分析器，記錄在 `data` 分支的 `last_run.json`（`analyzers` 欄位）；App 新聞頁中 Claude 分析的新聞會標示「AI 分析」並附上每檔個股的理由。
 - 已開啟伺服器端備援模型（`fallbacks: "default"`）：主模型拒答時會自動換模型重跑。
 - 相較於詞典，Claude 更能判斷語意，例如「虧損縮小」偏利多、「利多出盡」偏利空，也會為每檔股票寫一句理由。
 

@@ -150,6 +150,6 @@ class ClaudeAnalyzer:
             try:
                 out.extend(self._call(batch))
             except (anthropic.APIError, RuntimeError, json.JSONDecodeError) as exc:
-                log.warning("Claude 分析失敗，此批改用詞典分析：%s", exc)
+                log.warning("Claude 分析失敗，此批改用詞典分析：%s", str(exc)[:300])
                 out.extend(self.fallback.analyze(a.title, a.summary, a.tagged_codes) for a in batch)
         return out

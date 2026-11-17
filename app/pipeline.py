@@ -21,6 +21,9 @@ from .db import DailyPrice, ForeignFlow, NewsArticle, Stock, upsert_stocks
 
 log = logging.getLogger(__name__)
 
+# 最近一次分析各用了哪種分析器（寫進 last_run.json，方便確認 Claude 有沒有真的被使用）
+LAST_ANALYZERS: dict[str, int] = {}
+
 
 # ---------- 寫入 ----------
 
@@ -96,6 +99,12 @@ def analyze_articles(session: Session, articles: list[NewsArticle], use_llm: boo
     for a, r in zip(todo, results):
         apply_analysis(a, r)
     session.commit()
+    counts: dict[str, int] = {}
+    for r in results:
+        counts[r.analyzer] = counts.get(r.analyzer, 0) + 1
+    log.info("新聞情緒分析：%s", counts)
+    LAST_ANALYZERS.clear()
+    LAST_ANALYZERS.update(counts)
     return len(todo)
 
 
@@ -148,7 +157,7 @@ def run_daily(session: Session, d: date, use_llm: bool | None = None, with_news:
         by_market[r.market] = by_market.get(r.market, 0) + 1
     return {
         "date": d.isoformat(), "ok": True, "flows": len(rows), "flows_by_market": by_market,
-        "news": n_news, "analyzed": n_analyzed,
+        "news": n_news, "analyzed": n_analyzed, "analyzers": dict(LAST_ANALYZERS) if n_analyzed else {},
         "buy": len(result["buy"]), "sell": len(result["sell"]),
     }
 
@@ -169,4 +178,5 @@ def update_recent_news(session: Session, use_llm: bool | None = None) -> dict:
     start = datetime(latest.year, latest.month, latest.day, 13, 0)
     saved = save_articles(session, news.fetch_between(start, now))
     analyzed = analyze_articles(session, saved, use_llm=use_llm)
-    return {"ok": True, "since": start.isoformat(timespec="minutes"), "news": len(saved), "analyzed": analyzed}
+    return {"ok": True, "since": start.isoformat(timespec="minutes"), "news": len(saved), "analyzed": analyzed,
+            "analyzers": dict(LAST_ANALYZERS) if analyzed else {}}

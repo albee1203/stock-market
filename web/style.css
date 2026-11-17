@@ -167,3 +167,6 @@ textarea { width: 100%; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, mono
 
 .live-chip { font-size: 13px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); white-space: nowrap; }
 .quote > div > .muted:last-child { margin-top: 2px; font-size: 12px; }
+
+.chip.ai { background: var(--surface-2); color: var(--accent); font-weight: 600; font-size: 11px; padding: 0 6px; }
+.ai-reason { margin: 2px 0; font-size: 13px; }

@@ -40,6 +40,7 @@ jobs:
       TZ: Asia/Taipei
       DATABASE_URL: sqlite:///data/twstock.db
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # 選用；未設定則用詞典分析
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-opus-5-5' }}   # 可在 Settings → Variables 改用其他模型
     steps:
       - uses: actions/checkout@v4
 
