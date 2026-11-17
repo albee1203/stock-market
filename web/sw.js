@@ -1,5 +1,5 @@
 /* Service worker：一律「網路優先」——有網路就拿最新版（含 App 本身），離線時才用快取。 */
-const VERSION = "v9";
+const VERSION = "v10";
 const CACHE = `app-${VERSION}`;
 const SHELL_FILES = ["./", "index.html", "style.css", "app.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png"];
 

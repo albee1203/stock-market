@@ -170,3 +170,7 @@ textarea { width: 100%; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, mono
 
 .chip.ai { background: var(--surface-2); color: var(--accent); font-weight: 600; font-size: 11px; padding: 0 6px; }
 .ai-reason { margin: 2px 0; font-size: 13px; }
+
+.star { border: 0; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; padding: 4px 6px; cursor: pointer; min-width: 32px; min-height: 32px; }
+.star.on { color: #e0a100; }
+.seg button { font-size: 14px; }

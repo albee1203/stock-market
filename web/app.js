@@ -74,6 +74,16 @@ function loadHoldings() { try { return JSON.parse(localStorage.getItem("holdings
 function saveHoldings(h) { try { localStorage.setItem("holdings", JSON.stringify(h)); } catch { /* 私密模式等 */ } }
 state.holdings = loadHoldings();
 
+// 自選股：只存在這台裝置（localStorage）
+function loadWatch() { try { const w = JSON.parse(localStorage.getItem("watchlist") || "[]"); return Array.isArray(w) ? w : []; } catch { return []; } }
+function saveWatch(w) { try { localStorage.setItem("watchlist", JSON.stringify(w)); } catch { /* 私密模式等 */ } }
+state.watch = loadWatch();
+const inWatch = code => state.watch.includes(code);
+function starBtn(code) {
+  const on = inWatch(code);
+  return `<button class="star ${on ? "on" : ""}" data-star="${esc(code)}" aria-pressed="${on}" title="${on ? "移出自選" : "加入自選"}" aria-label="${on ? "移出自選" : "加入自選"}">${on ? "★" : "☆"}</button>`;
+}
+
 async function getHistory(code) {
   const data = await getJSON(`data/history/${encodeURIComponent(code)}.json`);
   return Array.isArray(data) ? { h: data, levels: null } : data;
@@ -235,12 +245,15 @@ async function renderList() {
   const live = d && state.date === state.index?.latest ? await fetchQuotes([...d.buy, ...d.sell].map(r => r.code)) : {};
   if (!d) return empty("還沒有資料。請等待每日自動更新，或在電腦上執行 <code>python -m app.cli run</code>。");
   const side = state.listSide;
+  if (side === "watch") {
+    return nightBlock(d.night) + (await alertsBlock()) + listSeg(d) + await renderWatch();
+  }
   const rows = d[side];
   const cards = rows.map(r => `
     <a class="card" href="#/stock/${esc(r.code)}">
       <div class="card-head">
         <span class="rank num">${r.rank}</span>
-        <span class="name">${esc(r.name)}</span><span class="code">${esc(r.code)}</span>
+        <span class="name">${esc(r.name)}</span><span class="code">${esc(r.code)}</span>${starBtn(r.code)}
         ${liveChip(live[r.code])}
         ${r.pre_index != null ? `<span class="badge-wrap">${badge(r.pre_index)}<small class="muted">盤前・昨收 ${r.index}</small></span>` : badge(r.index)}
       </div>
@@ -250,10 +263,62 @@ async function renderList() {
       <div class="chips">${(r.keywords || []).map(k => `<span class="chip ${side === "buy" ? "up" : "down"}">${esc(k)}</span>`).join("")}</div>
     </a>`).join("");
   return nightBlock(d.night) + (await alertsBlock())
-    + seg("listSide", side, [["buy", `建議買入 ${d.buy.length}`, "up"], ["sell", `賣出／避開 ${d.sell.length}`, "down"]])
+    + listSeg(d)
     + `<p class="muted" style="margin-bottom:10px">${side === "buy" ? "外資連買或大買，且新聞偏利多" : "外資連賣或大賣，且新聞偏利空"}</p>`
     + (rows.length ? cards : empty("今日沒有同時符合外資與新聞條件的標的"))
     + disclaimer();
+}
+
+function listSeg(d) {
+  return seg("listSide", state.listSide, [["buy", `建議買入 ${d.buy.length}`, "up"], ["sell", `賣出／避開 ${d.sell.length}`, "down"],
+    ["watch", `☆ 自選 ${state.watch.length}`]]);
+}
+
+async function renderWatch() {
+  if (!state.stocks) state.stocks = await getJSON("data/stocks.json").catch(() => []);
+  const codes = state.watch;
+  const live = await fetchQuotes(codes);
+  const cards = [];
+  for (const code of codes) {
+    let hist = { h: [], levels: null };
+    try { hist = await getHistory(code); } catch { /* 無資料 */ }
+    const closes = hist.h.filter(x => x[2] != null);
+    const lq = live[code];
+    const price = lq?.price ?? closes.at(-1)?.[2] ?? null;
+    const prev = lq ? (lq.prev ?? closes.at(-1)?.[2]) : closes.at(-2)?.[2];
+    const chg = price != null && prev ? price / prev - 1 : null;
+    const streak = histStreak(hist.h);
+    const sum5 = hist.h.slice(-5).reduce((a, x) => a + x[1], 0);
+    const info = state.stocks.find(x => x[0] === code);
+    const idx = state.day?.scores?.[code];
+    const sig = holdingSignals(code, streak);
+    cards.push(`<div class="card watch" data-code="${esc(code)}">
+      <div class="card-head">
+        <a href="#/stock/${esc(code)}" class="name" style="text-decoration:none">${esc(info?.[1] || code)}</a><span class="code">${esc(code)}</span>${starBtn(code)}
+        ${badge(idx)}
+      </div>
+      <div class="hgrid num">
+        <span class="muted">${lq ? "即時" : "收盤"}</span><b>${fmtP(price)}</b>
+        <span class="muted">漲跌</span><b class="${pctCls(chg)}">${pct(chg)}</b>
+        <span class="muted">外資連續</span><b class="${streak > 0 ? "up-t" : streak < 0 ? "down-t" : ""}">${streak > 0 ? "買" : streak < 0 ? "賣" : ""} ${Math.abs(streak)} 日</b>
+        <span class="muted">近 5 日</span><b class="${pctCls(sum5)}">${fmtInt(sum5)} 張</b>
+      </div>
+      ${sig.length ? `<div class="chips">${sig.map(([t, tone]) => `<span class="chip ${tone}">${esc(t)}</span>`).join("")}</div>` : ""}
+      <div class="row-actions">
+        <a class="btn ghost" href="${quoteUrl(code, info?.[2])}" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center">Yahoo ↗</a>
+        <button class="btn ghost" data-wup="${esc(code)}" aria-label="上移">↑</button>
+        <button class="btn ghost" data-star="${esc(code)}">移除</button>
+      </div>
+    </div>`);
+  }
+  const options = state.stocks.map(x => `<option value="${esc(x[0])}">${esc(x[1])}</option>`).join("");
+  const form = `<form id="watch-form" class="search">
+      <input name="q" list="watch-stocks" placeholder="加入自選：輸入代號或名稱" autocomplete="off" aria-label="加入自選股">
+      <button class="btn">加入</button>
+    </form><datalist id="watch-stocks">${options}</datalist>`;
+  return form
+    + (cards.length ? cards.join("") : empty("還沒有自選股。在上方輸入代號，或在個股頁、名單卡片點 ☆ 加入。"))
+    + `<p class="muted">自選股只存在這台裝置。推薦指數 50 為中性，越高越偏多。</p>` + disclaimer();
 }
 
 function renderForeign() {
@@ -373,7 +438,7 @@ async function renderStock(code) {
       <p class="muted">只存在這台裝置。停損%、停利% 留空＝依波動自動計算。</p>
     </div>`;
   return search + `
-    <h2 style="font-size:20px">${esc(info?.[1] || code)} <span class="code">${esc(code)}・${info?.[2] === "TPEX" ? "上櫃" : "上市"}</span></h2>
+    <h2 style="font-size:20px">${esc(info?.[1] || code)} <span class="code">${esc(code)}・${info?.[2] === "TPEX" ? "上櫃" : "上市"}</span> ${starBtn(code)}</h2>
     <div class="card quote">
       ${lq ? `<div><span class="muted">${esc(liveLabel(lq))}${isMarketOpen() ? "・每 15 秒更新" : ""}</span>
         <b class="num big-price ${pctCls(lq.change_pct)}">${fmtP(lq.price)}</b>
@@ -601,7 +666,7 @@ async function renderPortfolio() {
   const backup = `<details class="card">
     <summary><b>備份／同步推播</b></summary>
     <p class="muted">下方文字可以備份、搬到另一支手機，或貼到 GitHub 的 <code>HOLDINGS</code> Secret，讓早上推播也追蹤同樣的持股。</p>
-    <textarea id="pf-text" rows="5" spellcheck="false">${esc(holdingsToText(state.holdings))}</textarea>
+    <textarea id="pf-text" rows="5" spellcheck="false">${esc(holdingsToText(state.holdings))}${state.watch.length ? `\n# 自選:${state.watch.join(",")}` : ""}</textarea>
     <div class="row-actions" style="justify-content:flex-start">
       <button class="btn" data-copy>複製</button>
       <button class="btn ghost" data-import>以上方文字取代持股</button>
@@ -640,7 +705,10 @@ view.addEventListener("click", async e => {
     try { await navigator.clipboard.writeText(text); $("#pf-msg").textContent = "已複製"; }
     catch { $("#pf-text").select(); $("#pf-msg").textContent = "請手動複製選取的文字"; }
   } else if ("import" in t.dataset) {
-    const parsed = parseHoldingsText($("#pf-text").value);
+    const raw = $("#pf-text").value;
+    const wm = raw.match(/#\s*自選[:：]\s*([\w,\s]+)/);
+    if (wm) { state.watch = [...new Set(wm[1].split(/[,\s]+/).filter(x => /^\w{4,6}$/.test(x)))]; saveWatch(state.watch); }
+    const parsed = parseHoldingsText(raw);
     const n = Object.keys(parsed).length;
     if (!n && !confirm("沒有讀到任何持股，確定要清空？")) return;
     if (n && !confirm(`以 ${n} 檔持股取代目前的持股？`)) return;
@@ -665,6 +733,34 @@ async function render() {
     view.innerHTML = empty(`載入失敗：${esc(e.message)}`);
   }
 }
+
+view.addEventListener("click", e => {
+  const st = e.target.closest("[data-star]");
+  if (st) {
+    e.preventDefault(); e.stopPropagation();
+    const c = st.dataset.star;
+    state.watch = inWatch(c) ? state.watch.filter(x => x !== c) : [...state.watch, c];
+    saveWatch(state.watch);
+    const y = window.scrollY; render().then(() => window.scrollTo(0, y));
+    return;
+  }
+  const up = e.target.closest("[data-wup]");
+  if (up) {
+    const i = state.watch.indexOf(up.dataset.wup);
+    if (i > 0) { [state.watch[i - 1], state.watch[i]] = [state.watch[i], state.watch[i - 1]]; saveWatch(state.watch); render(); }
+  }
+}, true);
+view.addEventListener("submit", e => {
+  if (e.target.id !== "watch-form") return;
+  e.preventDefault();
+  const q = String(new FormData(e.target).get("q") || "").trim();
+  if (!q) return;
+  const hit = /^\w{4,6}$/.test(q) && state.stocks.some(x => x[0] === q) ? q
+    : /^\d{4}/.test(q) ? q.slice(0, 4) : (state.stocks.find(x => x[1] === q || x[1].includes(q)) || [])[0];
+  if (!hit) { alert(`找不到「${q}」`); return; }
+  if (!inWatch(hit)) { state.watch = [...state.watch, hit]; saveWatch(state.watch); }
+  render();
+});
 
 // 盤中每 15 秒更新即時價：只在畫面可見、沒有在輸入或編輯時重畫，並保留捲動位置
 setInterval(async () => {
