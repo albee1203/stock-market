@@ -1,0 +1,128 @@
+{
+ "backfill": {
+  "command": "backfill",
+  "started_at": "2026-11-18T21:36:46+08:00",
+  "finished_at": "2026-11-18T21:36:47+08:00",
+  "problems": []
+ },
+ "run": {
+  "command": "run",
+  "started_at": "2026-11-18T21:36:47+08:00",
+  "result": {
+   "date": "2026-11-18",
+   "ok": true,
+   "flows": 1864,
+   "flows_by_market": {
+    "TWSE": 1082,
+    "TPEX": 782
+   },
+   "news": 181,
+   "analyzed": 19,
+   "analyzers": {
+    "lexicon": 19
+   },
+   "buy": 10,
+   "sell": 10
+  },
+  "finished_at": "2026-11-18T21:37:21+08:00",
+  "problems": []
+ },
+ "replay": {
+  "command": "replay",
+  "started_at": "2026-11-16T16:35:54+08:00",
+  "finished_at": "2026-11-16T17:28:34+08:00",
+  "problems": [
+   "WARNING app.collectors.http: GET https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade 失敗（第 1 次）：HTTPSConnectionPool(host='www.tpex.org.tw', port=443): Read timed out.",
+   "WARNING app.collectors.http: GET https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyQuotes 失敗（第 1 次）：('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))",
+   "WARNING app.pipeline: 2026-09-25 查無外資買賣超資料（假日、或尚未公布：證交所約 15:00 後、櫃買約 15:30 後更新）",
+   "WARNING app.pipeline: 2026-09-28 查無外資買賣超資料（假日、或尚未公布：證交所約 15:00 後、櫃買約 15:30 後更新）",
+   "WARNING app.collectors.http: GET https://www.twse.com.tw/rwd/zh/fund/TWT38U 失敗（第 1 次）：HTTPSConnectionPool(host='www.twse.com.tw', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.pipeline: 2026-10-09 查無外資買賣超資料（假日、或尚未公布：證交所約 15:00 後、櫃買約 15:30 後更新）",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 2 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 2 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 3 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "ERROR app.collectors.news: 鉅亨網抓取失敗：多次請求失敗：https://api.cnyes.com/media/api/v1/newslist/category/tw_stock",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 2 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：500 Server Error: Internal Server Error for url: https://api.cnyes.com/media/api/v1/newslist/category/tw_stock?startAt=1792389600&endAt=1792511999&limit=30&page=1",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 2 次）：500 Server Error: Internal Server Error for url: https://api.cnyes.com/media/api/v1/newslist/category/tw_stock?startAt=1792389600&endAt=1792511999&limit=30&page=1",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 3 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "ERROR app.collectors.news: 鉅亨網抓取失敗：多次請求失敗：https://api.cnyes.com/media/api/v1/newslist/category/tw_stock",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：500 Server Error: Internal Server Error for url: https://api.cnyes.com/media/api/v1/newslist/category/tw_stock?startAt=1792476000&endAt=1792598399&limit=30&page=1",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 2 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.pipeline: 2026-10-23 查無外資買賣超資料（假日、或尚未公布：證交所約 15:00 後、櫃買約 15:30 後更新）",
+   "WARNING app.pipeline: 2026-10-26 查無外資買賣超資料（假日、或尚未公布：證交所約 15:00 後、櫃買約 15:30 後更新）",
+   "WARNING app.collectors.http: GET https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade 失敗（第 1 次）：525 Server Error: <none> for url: https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=EW&date=2026%2F10%2F28&response=json",
+   "WARNING app.collectors.http: GET https://www.twse.com.tw/rwd/zh/fund/TWT38U 失敗（第 1 次）：HTTPSConnectionPool(host='www.twse.com.tw', port=443): Read timed out. (read timeout=20.0)"
+  ]
+ },
+ "night": {
+  "command": "night",
+  "started_at": "2026-11-20T08:32:30+08:00",
+  "result": {
+   "contract": "TX",
+   "month": "202612",
+   "night_date": "2026-11-20",
+   "ref_date": "2026-11-19",
+   "close": 38107.0,
+   "ref_close": 38649.0,
+   "change": -542.0,
+   "change_pct": -0.01402,
+   "score": -0.8859,
+   "notes": [
+    "夜盤偏弱，進場宜保守"
+   ],
+   "fetched_at": "2026-11-20T08:32"
+  },
+  "finished_at": "2026-11-20T08:32:30+08:00",
+  "problems": []
+ },
+ "notify": {
+  "command": "notify",
+  "started_at": "2026-11-20T08:35:53+08:00",
+  "result": {
+   "date": "2026-11-18",
+   "sent": [],
+   "skipped": [],
+   "failed": []
+  },
+  "finished_at": "2026-11-20T08:35:59+08:00",
+  "problems": [
+   "WARNING app.notify: 沒有設定任何推播管道（LINE / Telegram / ntfy），略過"
+  ]
+ },
+ "news": {
+  "command": "news",
+  "started_at": "2026-11-20T08:32:31+08:00",
+  "result": {
+   "ok": true,
+   "since": "2026-11-18T13:00",
+   "news": 20,
+   "analyzed": 20,
+   "analyzers": {
+    "lexicon": 20
+   }
+  },
+  "finished_at": "2026-11-20T08:34:50+08:00",
+  "problems": [
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 2 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：502 Server Error: Bad Gateway for url: https://api.cnyes.com/media/api/v1/newslist/category/tw_stock?startAt=1794978000&endAt=1795134751&limit=30&page=4",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 2 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 1 次）：500 Server Error: Internal Server Error for url: https://api.cnyes.com/media/api/v1/newslist/category/tw_stock?startAt=1794978000&endAt=1795134751&limit=30&page=5",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 2 次）：500 Server Error: Internal Server Error for url: https://api.cnyes.com/media/api/v1/newslist/category/tw_stock?startAt=1794978000&endAt=1795134751&limit=30&page=5",
+   "WARNING app.collectors.http: GET https://api.cnyes.com/media/api/v1/newslist/category/tw_stock 失敗（第 3 次）：HTTPSConnectionPool(host='api.cnyes.com', port=443): Read timed out. (read timeout=20.0)",
+   "ERROR app.collectors.news: 鉅亨網抓取失敗：多次請求失敗：https://api.cnyes.com/media/api/v1/newslist/category/tw_stock"
+  ]
+ }
+}
