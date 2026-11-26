@@ -17,7 +17,7 @@ on:
         default: false
 
 permissions:
-  contents: write   # 夜盤資料與推播紀錄存回 data 分支
+  contents: write   # 夜盤資料與資料庫存回 data 分支
   pages: write
   id-token: write
 
@@ -54,9 +54,18 @@ jobs:
       - name: 從 data 分支還原資料庫
         run: |
           mkdir -p data
-          git fetch --depth=1 origin data
-          git show FETCH_HEAD:twstock.db > data/twstock.db
-          git show FETCH_HEAD:last_run.json > data/last_run.json 2>/dev/null || true
+          if git fetch --depth=1 origin data 2>/dev/null; then
+            # 新格式為壓縮檔 twstock.db.gz；相容舊的未壓縮 twstock.db
+            if git cat-file -e FETCH_HEAD:twstock.db.gz 2>/dev/null; then
+              git show FETCH_HEAD:twstock.db.gz | gunzip > data/twstock.db
+            else
+              git show FETCH_HEAD:twstock.db > data/twstock.db
+            fi
+            echo "已還原資料庫：$(du -h data/twstock.db | cut -f1)"
+            git show FETCH_HEAD:last_run.json > data/last_run.json 2>/dev/null || true
+          else
+            echo "尚無 data 分支，從空資料庫開始"
+          fi
 
       - name: 抓台指期夜盤
         run: python -m app.cli night
@@ -71,25 +80,34 @@ jobs:
         continue-on-error: true   # 推播失敗仍保存資料並更新 App
         run: python -m app.cli notify ${{ github.event.inputs.force == 'true' && '--force' || '' }}
 
-      - name: 推播紀錄存回 data 分支
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: 資料庫存回 data 分支
         run: |
+          python -m app.cli compact
           tmp=$(mktemp -d)
-          cp data/twstock.db "$tmp/"
+          gzip -9 -c data/twstock.db > "$tmp/twstock.db.gz"
+          size=$(stat -c %s "$tmp/twstock.db.gz")
+          echo "資料庫壓縮後：$((size / 1024 / 1024)) MB"
+          if [ "$size" -gt 94371840 ]; then
+            echo "::error::資料庫壓縮後仍超過 90 MB，接近 GitHub 單檔 100 MB 上限，請縮短保留天數（app/maintenance.py）"
+            exit 1
+          fi
           cp data/last_run.json "$tmp/" 2>/dev/null || true
           cd "$tmp"
           git init -q -b data
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add twstock.db $(ls last_run.json 2>/dev/null)
+          git add twstock.db.gz $(ls last_run.json 2>/dev/null)
           git commit -q -m "notify: $(date +%F_%H%M)"
           git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
 
   deploy:
     needs: notify
+    if: ${{ !cancelled() }}   # 資料庫存檔失敗時仍發佈 App
     runs-on: ubuntu-latest
     environment:
       name: github-pages

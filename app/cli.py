@@ -6,6 +6,7 @@
   python -m app.cli demo                       # 載入離線示範資料
   python -m app.cli show [--date ...]          # 在終端機印出清單
   python -m app.cli export [--out site]        # 匯出手機 App 用的靜態網站
+  python -m app.cli compact                    # 整理資料庫（刪除權證股價、過舊資料並壓實）
   python -m app.cli night                      # 抓台指期夜盤（盤前執行），納入最新清單的盤前指數
   python -m app.cli news                       # 抓最新交易日收盤後到現在的新聞（盤前執行）
   python -m app.cli notify [--dry-run]         # 推播最新一份清單（LINE / Telegram / ntfy）
@@ -84,6 +85,8 @@ def main(argv: list[str] | None = None) -> None:
     rp.add_argument("--days", type=int, default=60)
     rp.add_argument("--date", type=_date, default=None, help="重播到哪一天（預設今天）")
     rp.add_argument("--llm", action="store_true", help="用 Claude 分析歷史新聞（請求數多，注意費用）")
+
+    sub.add_parser("compact", help="整理資料庫：刪除權證股價、過舊資料並壓實")
 
     e = sub.add_parser("export", help="匯出手機 App（PWA）用的靜態網站")
     e.add_argument("--out", default="site")
@@ -180,6 +183,10 @@ def main(argv: list[str] | None = None) -> None:
             from .replay import replay
             res = replay(s, args.date or today, args.days, use_llm=args.llm)
             print(f"重播完成：{sum(1 for r in res if r['ok'])} 個交易日產生清單")
+        elif args.cmd == "compact":
+            from .maintenance import compact
+            summary["result"] = compact(s, today)
+            print(json.dumps(summary["result"], ensure_ascii=False))
         elif args.cmd == "export":
             from .export import export_site
             print(json.dumps(export_site(s, args.out, args.days), ensure_ascii=False))
@@ -188,7 +195,7 @@ def main(argv: list[str] | None = None) -> None:
             _print_lists(services.get_recommendations(s, d))
     finally:
         s.close()
-        if args.cmd in ("run", "backfill", "replay", "night", "news", "notify"):
+        if args.cmd in ("run", "backfill", "replay", "night", "news", "notify", "compact"):
             _write_summary(args.cmd, summary, problems)
 
 

@@ -42,6 +42,7 @@ def save_flows(session: Session, d: date, rows: list[FlowRow]) -> int:
 
 
 def save_prices(session: Session, d: date, rows: list[PriceRow]) -> int:
+    rows = [r for r in rows if prices.keep_price(r.code)]
     existing = {p.code: p for p in session.scalars(select(DailyPrice).where(DailyPrice.date == d))}
     for r in rows:
         p = existing.get(r.code)

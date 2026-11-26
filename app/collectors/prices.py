@@ -14,6 +14,14 @@ TWSE_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"  # 每日收�
 TPEX_URL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyQuotes"
 
 
+def keep_price(code: str) -> bool:
+    """只保存普通股（4 碼）與 ETF（00 開頭，例如 0050、00878、00632R）；權證、牛熊證等衍生商品不存。
+
+    2026-11 實測：股價表每天約 15,000 筆，其中約 13,000 筆是權證，讓資料庫超過 GitHub 單檔 100 MB 上限。
+    """
+    return len(code) == 4 and code.isdigit() or code.startswith("00")
+
+
 @dataclass
 class PriceRow:
     code: str
