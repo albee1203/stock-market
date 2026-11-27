@@ -1,0 +1,100 @@
+{
+ "backfill": {
+  "command": "backfill",
+  "started_at": "2026-11-27T21:39:59+08:00",
+  "finished_at": "2026-11-27T21:39:59+08:00",
+  "problems": []
+ },
+ "run": {
+  "command": "run",
+  "started_at": "2026-11-27T21:39:59+08:00",
+  "result": {
+   "date": "2026-11-27",
+   "ok": true,
+   "flows": 1840,
+   "flows_by_market": {
+    "TWSE": 1085,
+    "TPEX": 755
+   },
+   "news": 142,
+   "analyzed": 13,
+   "analyzers": {
+    "lexicon": 13
+   },
+   "buy": 10,
+   "sell": 9
+  },
+  "finished_at": "2026-11-27T21:40:29+08:00",
+  "problems": []
+ },
+ "replay": {
+  "command": "replay",
+  "started_at": "2026-11-26T13:35:28+08:00",
+  "finished_at": "2026-11-26T13:37:44+08:00",
+  "problems": [
+   "WARNING app.pipeline: 2026-11-26 查無外資買賣超資料（假日、或尚未公布：證交所約 15:00 後、櫃買約 15:30 後更新）"
+  ]
+ },
+ "night": {
+  "command": "night",
+  "started_at": "2026-11-27T09:57:31+08:00",
+  "result": {
+   "contract": "TX",
+   "month": "202612",
+   "night_date": "2026-11-27",
+   "ref_date": "2026-11-26",
+   "close": 39492.0,
+   "ref_close": 39455.0,
+   "change": 37.0,
+   "change_pct": 0.00094,
+   "score": 0.0935,
+   "notes": [
+    "夜盤波動不大，依原名單操作"
+   ],
+   "fetched_at": "2026-11-27T09:57"
+  },
+  "finished_at": "2026-11-27T09:57:32+08:00",
+  "problems": []
+ },
+ "notify": {
+  "command": "notify",
+  "started_at": "2026-11-27T09:58:14+08:00",
+  "result": {
+   "date": "2026-11-26",
+   "sent": [],
+   "skipped": [],
+   "failed": []
+  },
+  "finished_at": "2026-11-27T09:58:16+08:00",
+  "problems": [
+   "WARNING app.notify: 沒有設定任何推播管道（LINE / Telegram / ntfy），略過"
+  ]
+ },
+ "news": {
+  "command": "news",
+  "started_at": "2026-11-27T09:57:32+08:00",
+  "result": {
+   "ok": true,
+   "since": "2026-11-26T13:00",
+   "news": 77,
+   "analyzed": 7,
+   "analyzers": {
+    "lexicon": 7
+   }
+  },
+  "finished_at": "2026-11-27T09:57:39+08:00",
+  "problems": []
+ },
+ "compact": {
+  "command": "compact",
+  "started_at": "2026-11-27T21:41:09+08:00",
+  "result": {
+   "權證等股價": 0,
+   "過舊股價": 0,
+   "過舊外資": 0,
+   "過舊新聞": 0
+  },
+  "finished_at": "2026-11-27T21:41:09+08:00",
+  "problems": []
+ }
+}
